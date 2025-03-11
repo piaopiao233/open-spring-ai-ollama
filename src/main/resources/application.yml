@@ -1,0 +1,25 @@
+server:
+  port: 8888
+spring:
+  application:
+    name: chat-ollama
+  servlet:
+    multipart:
+      max-file-size: 200MB
+      max-request-size: 200MB
+#  datasource:
+#    url: jdbc:postgresql://localhost:5432/postgres
+#    username: postgres
+#    password: 123456
+#    driver-class-name: org.postgresql.Driver
+  ai:
+    ollama:
+      base-url: http://localhost:11434
+      chat:
+        options:
+          model: deepseek-r1:1.5b
+system:
+  aes-data: mtfkjyalg@530
+  aes-key: UKitNjH0GqXlkfhX
+
+
