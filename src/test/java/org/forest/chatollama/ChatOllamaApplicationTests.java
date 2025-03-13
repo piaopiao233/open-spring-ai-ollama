@@ -1,13 +1,21 @@
 package org.forest.chatollama;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+
+import java.util.List;
 
 @SpringBootTest
 class ChatOllamaApplicationTests {
 
+    @Autowired
+    private SysUserMapper sysUserMapper;
     @Test
     void contextLoads() {
+        List<SysUser> sysUsers = sysUserMapper.selectList(null);
+
+        System.out.println(sysUsers);
     }
 
 }

@@ -1,0 +1,15 @@
+spring:
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    url: jdbc:postgresql://localhost:5432/postgres
+    username: postgres
+    password: 123456
+    hikari:
+      #等待连接池分配连接的最大时长（毫秒），超过这个时长还没可用的连接则发生SQLException,缺省:30秒
+      connectionTimeout: 30000
+      #一个连接空闲状态的最大时长（毫秒），超时则被释放（retired），缺省:10分钟
+      idleTimeout: 600000
+      #一个连接的最大生命时长（毫秒），超时而且没被使用则被释放（retired），缺省:30分钟，建议设置比数据库超时时长少30秒，
+      maxLifetime: 1800000
+      maximumPoolSize: 3
+      minimumIdle: 1

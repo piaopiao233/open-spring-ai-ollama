@@ -3,15 +3,12 @@ server:
 spring:
   application:
     name: chat-ollama
+  profiles:
+    active: @profile.active@
   servlet:
     multipart:
       max-file-size: 200MB
       max-request-size: 200MB
-#  datasource:
-#    url: jdbc:postgresql://localhost:5432/postgres
-#    username: postgres
-#    password: 123456
-#    driver-class-name: org.postgresql.Driver
   ai:
     ollama:
       base-url: http://localhost:11434
@@ -21,5 +18,7 @@ spring:
 system:
   aes-data: mtfkjyalg@530
   aes-key: UKitNjH0GqXlkfhX
+mybatis-plus:
+  mapper-locations: classpath:/mapper/*
 
 
