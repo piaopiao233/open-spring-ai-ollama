@@ -27,7 +27,7 @@ public class CodeGenerator {
                 )
                 .strategyConfig(builder -> {
                             builder.entityBuilder().enableLombok();
-                            builder.addInclude("sys_user").controllerBuilder().enableRestStyle();
+                            builder.addInclude("chat_message").controllerBuilder().enableRestStyle();
                         }
                 )
                 .templateEngine(new FreemarkerTemplateEngine())

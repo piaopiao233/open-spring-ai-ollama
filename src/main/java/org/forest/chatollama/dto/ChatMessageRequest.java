@@ -2,15 +2,24 @@ package org.forest.chatollama.dto;
 
 import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
-import javax.validation.constraints.NotNull;
 
 @Data
 public class ChatMessageRequest {
 
 
-    @NotNull
     @NotBlank
     private String message;
 
+    /**
+     * 会话id
+     */
+    @NotBlank
+    private String sessionId;
+
+    /**
+     * 对话id
+     */
+    @NotBlank
+    private String recordId;
 
 }

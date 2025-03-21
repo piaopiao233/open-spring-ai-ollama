@@ -1,30 +1,31 @@
 package org.forest.chatollama.controller;
 
-
 import org.forest.chatollama.dto.ChatMessageRequest;
-import org.springframework.ai.chat.messages.UserMessage;
+import org.forest.chatollama.service.IChatMessageService;
 import org.springframework.ai.chat.model.ChatResponse;
-import org.springframework.ai.chat.prompt.Prompt;
-import org.springframework.ai.ollama.OllamaChatModel;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.validation.annotation.Validated;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Flux;
 
 @RestController
-@RequestMapping(value = "/Chat")
+@RequestMapping(value = "/ChatMessage")
 @Validated
-public class ChatController {
+public class ChatMessageController {
+
 
 
     @Autowired
-    private OllamaChatModel chatModel;
+    private IChatMessageService chatMessageService;
 
 
     @PostMapping(value = "/message", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<ChatResponse> generateStream(@RequestBody @Validated ChatMessageRequest request) {
-        return chatModel.stream(new Prompt(new UserMessage(request.getMessage()))).cache();
+        return chatMessageService.generateStream(request);
     }
 
 
