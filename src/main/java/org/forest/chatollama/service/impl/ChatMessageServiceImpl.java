@@ -8,6 +8,8 @@ import org.forest.chatollama.dto.ChatMessageRequest;
 import org.forest.chatollama.mapper.ChatMessageMapper;
 import org.forest.chatollama.model.ChatMessage;
 import org.forest.chatollama.service.IChatMessageService;
+import org.forest.chatollama.service.ToolCalling;
+import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
@@ -65,6 +67,18 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
             chatMessageAssistant.setContent(collect);
             chatMessageAssistant.setCreateTime(LocalDateTime.now());
             save(chatMessageAssistant);
+        }).subscribe();
+        return chatResponseFlux;
+    }
+
+    @Override
+    public Flux<ChatResponse> simpleGenerateStream(String message) {
+        Flux<ChatResponse> chatResponseFlux =  ChatClient.create(chatModel).prompt(new Prompt(message)).tools(new ToolCalling()).stream().chatResponse().cache();
+        chatResponseFlux.collectList().doOnNext(chatResponseList -> {
+            String collect = chatResponseList.stream()
+                    .map(r -> r.getResult().getOutput().getText())
+                    .collect(Collectors.joining());
+            System.out.println("AI回答：" + collect);
         }).subscribe();
         return chatResponseFlux;
     }
