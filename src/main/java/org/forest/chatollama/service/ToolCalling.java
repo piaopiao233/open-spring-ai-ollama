@@ -2,6 +2,8 @@ package org.forest.chatollama.service;
 
 import cn.hutool.core.date.LocalDateTimeUtil;
 import cn.hutool.core.util.StrUtil;
+import org.springframework.ai.support.ToolCallbacks;
+import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 
@@ -9,6 +11,8 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 public class ToolCalling {
+
+   public static final ToolCallback[] toolCallbacks = ToolCallbacks.from(new ToolCalling());
 
     @Tool(description = "获取当前或者今天时间")
     public String getCurrentTime() {
