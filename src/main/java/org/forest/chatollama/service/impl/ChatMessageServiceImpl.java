@@ -9,14 +9,17 @@ import org.forest.chatollama.mapper.ChatMessageMapper;
 import org.forest.chatollama.model.ChatMessage;
 import org.forest.chatollama.service.IChatMessageService;
 import org.forest.chatollama.service.ToolCalling;
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.model.tool.ToolCallingChatOptions;
 import org.springframework.ai.ollama.OllamaChatModel;
+import org.springframework.ai.tool.ToolCallback;
+import org.springframework.ai.tool.ToolCallbacks;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
@@ -73,7 +76,10 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
 
     @Override
     public Flux<ChatResponse> simpleGenerateStream(String message) {
-        Flux<ChatResponse> chatResponseFlux =  ChatClient.create(chatModel).prompt(new Prompt(message)).tools(new ToolCalling()).stream().chatResponse().cache();
+        ToolCallback[] toolCallbacks = ToolCallbacks.from(new ToolCalling());
+        ChatOptions chatOptions = ToolCallingChatOptions.builder().toolCallbacks(toolCallbacks).build();
+        Prompt prompt = new Prompt(message, chatOptions);
+        Flux<ChatResponse> chatResponseFlux = chatModel.stream(prompt).cache();
         chatResponseFlux.collectList().doOnNext(chatResponseList -> {
             String collect = chatResponseList.stream()
                     .map(r -> r.getResult().getOutput().getText())

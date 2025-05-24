@@ -22,11 +22,17 @@ public class SecurityInterceptor implements HandlerInterceptor {
     @Value("${system.aes-data}")
     private String aesData;
 
+    @Value("${system.is-enabel-aes}")
+    private boolean isEnabelAes;
+
 
     @Override
     public boolean preHandle(HttpServletRequest request,
                              HttpServletResponse response,
                              Object handler) throws Exception {
+        if (!isEnabelAes){
+            return true;
+        }
         // 模拟检查权限（实际应替换为你的逻辑，如校验 Token）
         String token = request.getHeader("token");
         if (StrUtil.isBlank(token) || !validateEncryptedData(token)) {

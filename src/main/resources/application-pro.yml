@@ -13,3 +13,11 @@ spring:
       maxLifetime: 1800000
       maximumPoolSize: 3
       minimumIdle: 1
+  ai:
+    ollama:
+      base-url: http://localhost:11434
+      chat:
+        options:
+          model: modelscope.cn/jusenlin/qwen2.5-14b-ra:latest
+system:
+  is-enabel-aes: true #是否开启加密

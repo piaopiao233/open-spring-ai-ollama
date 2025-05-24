@@ -7,12 +7,6 @@ spring:
     multipart:
       max-file-size: 200MB
       max-request-size: 200MB
-  ai:
-    ollama:
-      base-url: http://localhost:11434
-      chat:
-        options:
-          model: deepseek-r1:1.5b
 system:
   aes-data: mtfkjyalg@530
   aes-key: UKitNjH0GqXlkfhX

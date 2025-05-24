@@ -13,7 +13,7 @@ public class ToolCalling {
     @Tool(description = "获取当前或者今天时间")
     public String getCurrentTime() {
         String string = LocalDateTimeUtil.formatNormal(LocalDateTime.now());
-        System.out.println("当前时间" + string);
+        System.out.println("ToolCalling触发 当前时间：" + string);
         return string;
     }
 
@@ -32,7 +32,7 @@ public class ToolCalling {
             return "请填写正确的日期格式yyyy-mm-dd";
         }
         String string = StrUtil.format("{}的考勤信息如下：一班的{}已签到，二班的{}没有查询到考勤信息", date, name, name);
-        System.out.println(string);
+        System.out.println("ToolCalling触发 getStudentAttendance：" + string);
         return string;
     }
 

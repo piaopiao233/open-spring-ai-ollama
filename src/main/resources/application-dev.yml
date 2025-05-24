@@ -13,3 +13,11 @@ spring:
       maxLifetime: 1800000
       maximumPoolSize: 3
       minimumIdle: 1
+  ai:
+    ollama:
+      base-url: http://localhost:11434
+      chat:
+        options:
+          model: alpha.hf-mirror.com/Qwen/Qwen2.5-7B-Instruct-GGUF:latest
+system:
+  is-enabel-aes: false #是否开启加密
