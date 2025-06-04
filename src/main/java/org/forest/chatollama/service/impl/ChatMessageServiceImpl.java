@@ -77,7 +77,7 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
     @Override
     public Flux<ChatResponse> simpleGenerateStream(String message) {
         ChatOptions chatOptions = ToolCallingChatOptions.builder().toolCallbacks(ToolCalling.toolCallbacks).build();
-        Prompt prompt = new Prompt(message);
+        Prompt prompt = new Prompt(message, chatOptions);
         Flux<ChatResponse> chatResponseFlux = chatModel.stream(prompt).cache();
         chatResponseFlux.collectList().doOnNext(chatResponseList -> {
             String collect = chatResponseList.stream()

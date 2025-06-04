@@ -18,6 +18,6 @@ spring:
       base-url: http://localhost:11434
       chat:
         options:
-          model: alpha.hf-mirror.com/Qwen/Qwen2.5-7B-Instruct-GGUF:latest
+          model: modelscope.cn/jusenlin/qwen2.5-7b-ra2:latest
 system:
   is-enabel-aes: false #是否开启加密
