@@ -26,7 +26,7 @@ public class SystemConfig implements WebMvcConfigurer {
     @Bean
     public MybatisPlusInterceptor mybatisPlusInterceptor(){
         MybatisPlusInterceptor interceptor = new MybatisPlusInterceptor();
-        interceptor.addInnerInterceptor(new PaginationInnerInterceptor(DbType.POSTGRE_SQL));
+        interceptor.addInnerInterceptor(new PaginationInnerInterceptor(DbType.MARIADB));
         // 防止误操作全表更新插件
         interceptor.addInnerInterceptor(new BlockAttackInnerInterceptor());
         return interceptor;

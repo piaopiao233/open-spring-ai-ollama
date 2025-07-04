@@ -12,5 +12,5 @@ system:
   aes-key: UKitNjH0GqXlkfhX
 mybatis-plus:
   mapper-locations: classpath:/mapper/*
-
-
+  configuration:
+   # log-impl: org.apache.ibatis.logging.stdout.StdOutImpl

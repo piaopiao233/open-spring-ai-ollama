@@ -75,7 +75,13 @@
 
         <dependency>
             <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-starter-vector-store-pgvector</artifactId>
+            <artifactId>spring-ai-starter-vector-store-mariadb</artifactId>
+            <exclusions>
+                <exclusion>
+                    <artifactId>org.mariadb.jdbc</artifactId>
+                    <groupId>mariadb-java-client</groupId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
         <dependency>
@@ -124,6 +130,12 @@
             <groupId>org.freemarker</groupId>
             <artifactId>freemarker</artifactId>
             <version>2.3.34</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.mariadb.jdbc</groupId>
+            <artifactId>mariadb-java-client</artifactId>
+            <version>3.5.3</version>
         </dependency>
 
     </dependencies>
