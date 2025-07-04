@@ -11,7 +11,7 @@ import java.util.List;
 
 /**
  * <p>
- *  服务类
+ * 服务类
  * </p>
  *
  * @author 居森林
@@ -23,8 +23,11 @@ public interface IChatMessageService extends IService<ChatMessage> {
 
     Flux<ChatResponse> simpleGenerateStream(String message);
 
+    default List<ChatMessage> selectBySessionId(String sessionId) {
+        return selectBySessionId(sessionId, true);
+    }
 
-    List<ChatMessage> selectBySessionId(String sessionId,  boolean isAsc);
+    List<ChatMessage> selectBySessionId(String sessionId, boolean isAsc);
 
     //构建多轮对话
     List<Message> buildMessageList(List<ChatMessage> chatMessageList);
