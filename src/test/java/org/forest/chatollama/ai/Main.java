@@ -12,7 +12,7 @@ import java.util.List;
 public class Main {
 
     public static void main(String[] args) {
-        ExcelReader excelReader = ExcelUtil.getReader("C:\\Users\\Admin\\Desktop\\1.xlsx");
+        ExcelReader excelReader = ExcelUtil.getReader("C:\\Users\\Admin\\Desktop\\项目\\1.xlsx");
         Sheet sheet = excelReader.getSheet();
         //获取sheet一共多少行
         int rowCount = sheet.getPhysicalNumberOfRows();
@@ -37,8 +37,31 @@ public class Main {
             }
             shareGptSessions.add(shareGptSession);
         }
+
         String jsonStr = JSONUtil.toJsonStr(shareGptSessions);
-        FileUtil.writeString(jsonStr, "C:\\Users\\Admin\\Desktop\\1.json", "utf-8");
+        List<ShareGptSession> progressiveSessions = createProgressiveSessions(shareGptSessions);
+        System.out.println(111);
+        // FileUtil.writeString(jsonStr, "C:\\Users\\Admin\\Desktop\\1.json", "utf-8");
+    }
+
+    public static List<ShareGptSession> createProgressiveSessions(List<ShareGptSession> originalSessions) {
+        List<ShareGptSession> progressiveSessions = new ArrayList<>();
+        for (ShareGptSession session : originalSessions) {
+            List<Dialogue> fullConversation = session.getConversations();
+            int totalDialogues = fullConversation.size();
+            // 跳过空对话
+            if (totalDialogues < 2) continue;
+            // 为每个长度创建渐进式对话
+            for (int length = 2; length <= totalDialogues; length += 2) {
+                // 创建当前长度的子对话（浅拷贝）
+                List<Dialogue> subConversation = new ArrayList<>(fullConversation.subList(0, length));
+                // 构建新会话对象
+                ShareGptSession newSession = new ShareGptSession();
+                newSession.setConversations(subConversation);
+                progressiveSessions.add(newSession);
+            }
+        }
+        return progressiveSessions;
     }
 
 }
