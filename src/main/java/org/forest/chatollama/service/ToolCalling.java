@@ -23,7 +23,7 @@ public class ToolCalling {
 
     @Tool(name = "获取某个学生某天的考勤", description = "获取某个学生某天的考勤")
     public String getStudentAttendance(@ToolParam(required = true, description = "姓名") String name,
-                                       @ToolParam(required = false, description = "日期， 可选，格式 yyyy-MM-dd（默认当天") String date) {
+                                       @ToolParam(required = false, description = "日期， 可选，格式 yyyy-MM-dd（默认为空，今天也传空值") String date) {
         if (StrUtil.isBlank(name)) {
             return "请填写姓名";
         }
