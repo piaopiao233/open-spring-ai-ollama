@@ -75,18 +75,23 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
     @Override
     public Flux<ChatResponse> simpleGenerateStream(String message) {
         ChatOptions chatOptions = OllamaChatOptions.builder()
-                .disableThinking()
-                .toolCallbacks(ToolCalling.toolCallbacks)
+              // .disableThinking()
+               // .toolCallbacks(ToolCalling.toolCallbacks)
                 .build();
         Prompt prompt = new Prompt(message, chatOptions);
-        Flux<ChatResponse> chatResponseFlux = chatModel.stream(prompt).cache();
-        chatResponseFlux.collectList().doOnNext(chatResponseList -> {
-            String collect = chatResponseList.stream()
-                    .map(r -> r.getResult().getOutput().getText())
-                    .collect(Collectors.joining());
-            System.out.println("AI回答：" + collect);
-        }).subscribe();
-        return chatResponseFlux;
+        Flux<ChatResponse> flux = chatModel.stream(prompt);
+        // 使用 share() 或 cache() 让多个订阅者共享同一份流（非常重要！）
+        Flux<ChatResponse> sharedFlux = flux.share();   // 或 .cache() 如果你确定只有一个订阅者
+        // 异步收集完整内容并保存（不阻塞主流程）
+        sharedFlux.map(resp -> resp.getResult().getOutput().getText())
+                .reduce("", String::concat)           // 拼接所有 token
+                .doOnNext(fullText -> {
+                    System.out.println(fullText);
+                })
+                .subscribe();   // 触发收集
+
+        // 返回给调用方的是原始流
+        return sharedFlux;   // 推荐返回 sharedFlux，避免重复订阅上游
     }
 
     @Override

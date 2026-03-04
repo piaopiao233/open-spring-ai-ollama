@@ -39,4 +39,8 @@ public class ChatMessageController {
         return Result.succ(chatMessages);
     }
 
+    @PostMapping(value = "/maxMessage", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<ChatResponse> maxMessage(String message) {
+        return chatMessageService.simpleGenerateStream(message);
+    }
 }
