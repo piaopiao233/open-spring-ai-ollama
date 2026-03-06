@@ -75,7 +75,7 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
     @Override
     public Flux<ChatResponse> simpleGenerateStream(String message) {
         ChatOptions chatOptions = OllamaChatOptions.builder()
-              // .disableThinking()
+               .disableThinking()
                // .toolCallbacks(ToolCalling.toolCallbacks)
                 .build();
         Prompt prompt = new Prompt(message, chatOptions);
@@ -85,13 +85,9 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
         // 异步收集完整内容并保存（不阻塞主流程）
         sharedFlux.map(resp -> resp.getResult().getOutput().getText())
                 .reduce("", String::concat)           // 拼接所有 token
-                .doOnNext(fullText -> {
-                    System.out.println(fullText);
-                })
-                .subscribe();   // 触发收集
-
+                .doOnNext(System.out::println).subscribe();   // 触发收集
         // 返回给调用方的是原始流
-        return sharedFlux;   // 推荐返回 sharedFlux，避免重复订阅上游
+        return sharedFlux;
     }
 
     @Override

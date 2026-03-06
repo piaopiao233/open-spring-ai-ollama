@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.jackson.Jackson2ObjectMapperBuilderCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
@@ -41,7 +42,14 @@ public class SystemConfig implements WebMvcConfigurer {
             builder.serializerByType(Long.class, ToStringSerializer.instance);
         };
     }
-
-
+    @Override
+    public void addCorsMappings(CorsRegistry registry) {
+        registry.addMapping("/**") // 覆盖所有接口（包括 /ChatMessage/test）
+                .allowedOriginPatterns("*") // 允许所有来源（支持凭证）
+                .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS") // 必须包含 OPTIONS
+                .allowedHeaders("*") // 允许所有请求头
+                .allowCredentials(true) // 可选：允许携带凭证
+                .maxAge(3600); // 预检请求缓存 1 小时
+    }
 
 }
