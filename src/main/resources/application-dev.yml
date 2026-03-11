@@ -1,6 +1,6 @@
 spring:
   datasource:
-    url: jdbc:mariadb://localhost:3306/test
+    url: jdbc:mariadb://localhost:3306/test?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
     username: root
     password: 123456
     hikari:
@@ -14,16 +14,20 @@ spring:
       minimumIdle: 1
   ai:
     vectorstore:
-      mariadb:
+      qdrant:
+        host: localhost
+        port: 6334
+        collection-name: my-rag
         initialize-schema: true
-        distance-type: COSINE
+        use-tls: false
+        api-key: RzxqVXK11CDKl1Bt
     ollama:
       base-url: http://localhost:11434
       chat:
         options:
-          model: model
+          model: qwen3.5:cloud
       embedding:
         options:
-          model: dengcao/Qwen3-Embedding-0.6B:Q8_0
+          model: nomic-embed-text
 system:
   is-enabel-aes: false #是否开启加密

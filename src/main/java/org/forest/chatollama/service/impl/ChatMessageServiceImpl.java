@@ -57,19 +57,26 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
         List<ChatMessage> chatMessages = selectBySessionId(request.getSessionId(), true);
         //构建多轮对话
         List<Message> messages = buildMessageList(chatMessages);
-        Flux<ChatResponse> chatResponseFlux = chatModel.stream(new Prompt(messages)).cache();
-        chatResponseFlux.collectList().doOnNext(chatResponseList -> {
-            String collect = chatResponseList.stream()
-                    .map(r -> r.getResult().getOutput().getText())
-                    .collect(Collectors.joining());
-            ChatMessage chatMessageAssistant = BeanUtil.copyProperties(chatMessage, ChatMessage.class);
-            chatMessageAssistant.setId(null);
-            chatMessageAssistant.setType(Const.ChatMessageType.ASSISTANT);
-            chatMessageAssistant.setContent(collect);
-            chatMessageAssistant.setCreateTime(LocalDateTime.now());
-            save(chatMessageAssistant);
-        }).subscribe();
-        return chatResponseFlux;
+        ChatOptions chatOptions = OllamaChatOptions.builder()
+                .disableThinking()
+                // .toolCallbacks(ToolCalling.toolCallbacks)
+                .build();
+        Prompt prompt = new Prompt(messages, chatOptions);
+        Flux<ChatResponse> chatResponseFlux = chatModel.stream(prompt);
+        // 使用 share() 或 cache() 让多个订阅者共享同一份流（非常重要！）
+        Flux<ChatResponse> sharedFlux = chatResponseFlux.share();   // 或 .cache() 如果你确定只有一个订阅者
+        // 异步收集完整内容并保存（不阻塞主流程）
+        sharedFlux.map(resp -> resp.getResult().getOutput().getText())
+                .reduce("", String::concat)           // 拼接所有 token
+                .doOnNext(content ->{
+                    ChatMessage chatMessageAssistant = BeanUtil.copyProperties(chatMessage, ChatMessage.class);
+                    chatMessageAssistant.setId(null);
+                    chatMessageAssistant.setType(Const.ChatMessageType.ASSISTANT);
+                    chatMessageAssistant.setContent(content);
+                    chatMessageAssistant.setCreateTime(LocalDateTime.now());
+                    save(chatMessageAssistant);
+                }).subscribe();
+        return sharedFlux;
     }
 
     @Override
