@@ -10,6 +10,11 @@ spring:
 system:
   aes-data: mtfkjyalg@530
   aes-key: UKitNjH0GqXlkfhX
+  ai:
+    topKPerQuery: 5      # 每个rag查询变体检索文档数量
+    allTopK: 20           # 所有rag查询变体检索文档总数量
+    numVariants: 5        # rag查询变体数量
+    similarityThreshold: 0.65 # rag查询相似度阈值
 mybatis-plus:
   mapper-locations: classpath:/mapper/*
 #  configuration:

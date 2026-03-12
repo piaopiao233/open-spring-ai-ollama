@@ -1,6 +1,7 @@
 package org.forest.chatollama.service.impl;
 
 import cn.hutool.core.bean.BeanUtil;
+import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.forest.chatollama.common.exception.Const;
@@ -8,7 +9,7 @@ import org.forest.chatollama.dto.ChatMessageRequest;
 import org.forest.chatollama.mapper.ChatMessageMapper;
 import org.forest.chatollama.model.ChatMessage;
 import org.forest.chatollama.service.IChatMessageService;
-import org.forest.chatollama.service.ToolCalling;
+import org.forest.chatollama.util.SpringAiRagUtils;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
@@ -16,6 +17,7 @@ import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.document.Document;
 import org.springframework.ai.ollama.OllamaChatModel;
 import org.springframework.ai.ollama.api.OllamaChatOptions;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,7 +27,6 @@ import reactor.core.publisher.Flux;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
 
 /**
  * <p>
@@ -42,6 +43,8 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
     @Autowired
     private OllamaChatModel chatModel;
 
+    @Autowired
+    private SpringAiRagUtils springAiRagUtils;
 
     @Override
     public Flux<ChatResponse> generateStream(ChatMessageRequest request) {
@@ -122,5 +125,20 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
             }
         });
         return messages;
+    }
+
+    @Override
+    public List<Document> multiQuerySimilaritySearch(String sessionId, String currentQuestion) {
+        List<Message> messages = new ArrayList<>();
+        if (StrUtil.isNotBlank(sessionId)) {
+            //查询所有的对话
+            List<ChatMessage> chatMessages = selectBySessionId(sessionId, true);
+            //构建多轮对话
+            messages = buildMessageList(chatMessages);
+        }
+        //获取上下文的查询变体
+        List<String> queries = springAiRagUtils.generateMultiCondensedQueries(messages, currentQuestion);
+        System.out.printf("查询变体有：%s%n", queries);
+        return springAiRagUtils.multiQuerySimilaritySearch(queries);
     }
 }

@@ -5,6 +5,7 @@ import org.forest.chatollama.model.ChatMessage;
 import com.baomidou.mybatisplus.extension.service.IService;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.document.Document;
 import reactor.core.publisher.Flux;
 
 import java.util.List;
@@ -31,4 +32,11 @@ public interface IChatMessageService extends IService<ChatMessage> {
 
     //构建多轮对话
     List<Message> buildMessageList(List<ChatMessage> chatMessageList);
+
+    /**
+     * 多轮对话转换为多查询变体 再查询知识库
+     */
+    List<Document> multiQuerySimilaritySearch(String sessionId, String currentQuestion);
+
+
 }
