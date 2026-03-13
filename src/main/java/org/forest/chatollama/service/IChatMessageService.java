@@ -3,6 +3,7 @@ package org.forest.chatollama.service;
 import org.forest.chatollama.dto.ChatMessageRequest;
 import org.forest.chatollama.model.ChatMessage;
 import com.baomidou.mybatisplus.extension.service.IService;
+import org.forest.chatollama.model.CustomChatResponse;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.document.Document;
@@ -21,6 +22,8 @@ import java.util.List;
 public interface IChatMessageService extends IService<ChatMessage> {
 
     Flux<ChatResponse> generateStream(ChatMessageRequest request);
+
+    Flux<CustomChatResponse> simpleGenerateStreamCustom(String message);
 
     Flux<ChatResponse> simpleGenerateStream(String message);
 

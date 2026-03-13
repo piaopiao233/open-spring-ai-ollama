@@ -8,6 +8,7 @@ import org.forest.chatollama.common.exception.Const;
 import org.forest.chatollama.dto.ChatMessageRequest;
 import org.forest.chatollama.mapper.ChatMessageMapper;
 import org.forest.chatollama.model.ChatMessage;
+import org.forest.chatollama.model.CustomChatResponse;
 import org.forest.chatollama.service.IChatMessageService;
 import org.forest.chatollama.util.SpringAiRagUtils;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -23,14 +24,13 @@ import org.springframework.ai.ollama.api.OllamaChatOptions;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
-
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
  * <p>
- *  服务实现类
+ * 服务实现类
  * </p>
  *
  * @author 居森林
@@ -71,7 +71,7 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
         // 异步收集完整内容并保存（不阻塞主流程）
         sharedFlux.map(resp -> resp.getResult().getOutput().getText())
                 .reduce("", String::concat)           // 拼接所有 token
-                .doOnNext(content ->{
+                .doOnNext(content -> {
                     ChatMessage chatMessageAssistant = BeanUtil.copyProperties(chatMessage, ChatMessage.class);
                     chatMessageAssistant.setId(null);
                     chatMessageAssistant.setType(Const.ChatMessageType.ASSISTANT);
@@ -83,10 +83,48 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
     }
 
     @Override
+    public Flux<CustomChatResponse> simpleGenerateStreamCustom(String message) {
+        ChatOptions chatOptions = OllamaChatOptions.builder()
+                // .toolCallbacks(ToolCalling.toolCallbacks)
+                .disableThinking()
+                .build();
+        Prompt prompt = new Prompt(message, chatOptions);
+        // 用于收集完整内容（日志/保存用）
+        StringBuffer fullContent = new StringBuffer();
+        return chatModel.stream(prompt)
+                .map(chatResponse -> {
+                    // 1. 获取当前 chunk 文本
+                    String delta = chatResponse.getResult().getOutput().getText();
+                    // 2. 判断是否思考过程（Spring AI Ollama 官方方式）
+                    String thinkingPart = chatResponse.getResult().getMetadata().get("thinking");
+                    boolean isThinking = StrUtil.isNotBlank(thinkingPart);
+                    // 3. token 数量（仅最后一块才有，非流式 usage 会在最后一 chunk 返回）
+                    Integer tokens = null;
+                    if (chatResponse.getMetadata() != null
+                            && chatResponse.getMetadata().getUsage() != null) {
+                        tokens = chatResponse.getMetadata().getUsage().getTotalTokens();
+                    }
+                    // 4. 累积完整内容（日志用）
+                    fullContent.append(delta);
+                    return new CustomChatResponse(
+                            delta,
+                            isThinking,
+                            null,
+                            tokens
+                    );
+                })
+                .doOnComplete(() -> {
+                    System.out.println("完整响应: " + fullContent);
+                }).doOnCancel(() -> {
+                    System.out.println("用户取消，部分内容: " + fullContent);
+                }).doOnError(err -> System.err.println("流异常: " + err));
+    }
+
+    @Override
     public Flux<ChatResponse> simpleGenerateStream(String message) {
         ChatOptions chatOptions = OllamaChatOptions.builder()
-               .disableThinking()
-               // .toolCallbacks(ToolCalling.toolCallbacks)
+                .disableThinking()
+                // .toolCallbacks(ToolCalling.toolCallbacks)
                 .build();
         Prompt prompt = new Prompt(message, chatOptions);
         Flux<ChatResponse> flux = chatModel.stream(prompt);
@@ -101,7 +139,7 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
     }
 
     @Override
-    public List<ChatMessage> selectBySessionId(String sessionId,  boolean isAsc) {
+    public List<ChatMessage> selectBySessionId(String sessionId, boolean isAsc) {
         LambdaQueryWrapper<ChatMessage> queryWrapper = new LambdaQueryWrapper<>();
         queryWrapper.eq(ChatMessage::getSessionId, sessionId);
         if (isAsc) {
@@ -118,9 +156,9 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
         chatMessageList.forEach(chatMessage -> {
             if (Const.ChatMessageType.SYSTEM.equals(chatMessage.getType())) {
                 messages.add(new SystemMessage(chatMessage.getContent()));
-            } else if (Const.ChatMessageType.USER.equals(chatMessage.getType())){
+            } else if (Const.ChatMessageType.USER.equals(chatMessage.getType())) {
                 messages.add(new UserMessage(chatMessage.getContent()));
-            }else {
+            } else {
                 messages.add(new AssistantMessage(chatMessage.getContent()));
             }
         });

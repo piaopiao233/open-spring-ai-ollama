@@ -172,14 +172,9 @@ class ChatOllamaApplicationTests2 {
 
     @Test
     void test4() {
-        RewriteQueryTransformer queryTransformer = RewriteQueryTransformer.builder()
-                .chatClientBuilder(ChatClient.builder(chatModel))
-                .build();
-        Query transform = queryTransformer.transform(new Query("一信通 http调用方式是什么？"));
-
-        SearchRequest request = SearchRequest.builder().query(transform.text())
+        SearchRequest request = SearchRequest.builder().query("次查询接口返回的最大回复信息是多少 ？")
                 .topK(5)
-                .similarityThreshold(0.65f)
+                .similarityThreshold(0.45f)
                 .build();
         List<Document> results = vectorStore.similaritySearch(request);
         System.out.println(111);

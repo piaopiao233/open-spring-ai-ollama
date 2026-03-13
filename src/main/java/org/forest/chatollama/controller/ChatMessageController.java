@@ -4,6 +4,7 @@ import cn.hutool.core.util.StrUtil;
 import jakarta.validation.constraints.NotBlank;
 import org.forest.chatollama.dto.ChatMessageRequest;
 import org.forest.chatollama.model.ChatMessage;
+import org.forest.chatollama.model.CustomChatResponse;
 import org.forest.chatollama.model.Result;
 import org.forest.chatollama.service.IChatMessageService;
 import org.forest.chatollama.util.SpringAiRagUtils;
@@ -34,8 +35,8 @@ public class ChatMessageController {
     }
 
     @GetMapping(value = "/simpleMessage", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<ChatResponse> simpleGenerateStream(@NotBlank String message) {
-        return chatMessageService.simpleGenerateStream(message);
+    public Flux<CustomChatResponse> simpleGenerateStream(@NotBlank String message) {
+        return chatMessageService.simpleGenerateStreamCustom(message);
     }
 
     @GetMapping(value = "/selectBySessionId")
