@@ -10,15 +10,16 @@ import lombok.extern.slf4j.Slf4j;
 import org.forest.chatollama.common.context.UserContext;
 import org.forest.chatollama.common.exception.Const;
 import org.forest.chatollama.dto.ChatMessageRequest;
+import org.forest.chatollama.dto.CustomChatResponse;
+import org.forest.chatollama.dto.User;
 import org.forest.chatollama.mapper.ChatMessageMapper;
 import org.forest.chatollama.model.ChatMessage;
 import org.forest.chatollama.model.ChatSession;
-import org.forest.chatollama.dto.CustomChatResponse;
-import org.forest.chatollama.dto.User;
 import org.forest.chatollama.service.IChatMessageService;
 import org.forest.chatollama.service.IChatSessionService;
 import org.forest.chatollama.service.ToolCalling;
 import org.forest.chatollama.util.SpringAiRagUtils;
+import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.*;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.ChatOptions;
@@ -26,6 +27,7 @@ import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.ollama.OllamaChatModel;
 import org.springframework.ai.ollama.api.OllamaChatOptions;
+import org.springframework.ai.tool.ToolCallback;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
@@ -73,16 +75,21 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
         ChatMessage userChat = new ChatMessage(schoolId, userId, Const.ChatMessageType.USER, sessionId, recordId, userMessage);
         save(userChat);
         List<ChatMessage> historyMessages = selectBySessionId(sessionId, true);
+        //创建消息列表
         List<Message> messages = buildMessageList(historyMessages);
-
+        //消息配置
         ChatOptions chatOptions = OllamaChatOptions.builder()
                 .disableThinking()
-                .toolCallbacks(ToolCalling.toolCallbacks)
                 .build();
-        Prompt prompt = new Prompt(messages, chatOptions);
+        //创建工具调用
+        ToolCallback[] toolCallbacks = ToolCalling.toolCallbacks;
+        // 构建 ChatClient（代替你原来的 chatModel.stream）
+        ChatClient chatClient = ChatClient.builder(chatModel).build();
+        //ai返回内容
         StringBuffer fullContent = new StringBuffer();
         String finalSessionId = sessionId;
-        return chatModel.stream(prompt)
+        return chatClient.prompt().messages(messages).toolCallbacks(toolCallbacks).options(chatOptions).stream()
+                .chatResponse()
                 .map(chatResponse -> {
                     String delta = chatResponse.getResult().getOutput().getText();
                     String thinkingPart = chatResponse.getResult().getMetadata().get("thinking");
@@ -188,7 +195,14 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
             } else if (Const.ChatMessageType.SYSTEM.equals(type)) {
                 messages.add(new SystemMessage(content));
             } else if (Const.ChatMessageType.TOOL.equals(type)) {
-
+                ToolResponseMessage.ToolResponse toolResp = new ToolResponseMessage.ToolResponse(
+                        chatMessage.getId().toString(),
+                        "get_current_time",
+                        chatMessage.getContent()
+                );
+                messages.add(ToolResponseMessage.builder()
+                        .responses(List.of(toolResp))
+                        .build());
             }
         }
         return messages;

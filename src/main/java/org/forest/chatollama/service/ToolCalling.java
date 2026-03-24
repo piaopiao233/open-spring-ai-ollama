@@ -14,7 +14,7 @@ public class ToolCalling {
 
    public static final ToolCallback[] toolCallbacks = ToolCallbacks.from(new ToolCalling());
 
-    @Tool(description = "获取当前或者今天时间")
+    @Tool(name = "get_current_time",description = "获取当前或者今天时间")
     public String getCurrentTime() {
         String string = LocalDateTimeUtil.formatNormal(LocalDateTime.now());
         System.out.println("ToolCalling触发 当前时间：" + string);
