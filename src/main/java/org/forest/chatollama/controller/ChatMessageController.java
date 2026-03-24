@@ -1,11 +1,13 @@
 package org.forest.chatollama.controller;
 
 import cn.hutool.core.util.StrUtil;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.NotBlank;
 import org.forest.chatollama.dto.ChatMessageRequest;
 import org.forest.chatollama.model.ChatMessage;
-import org.forest.chatollama.model.CustomChatResponse;
-import org.forest.chatollama.model.Result;
+import org.forest.chatollama.dto.CustomChatResponse;
+import org.forest.chatollama.dto.Result;
 import org.forest.chatollama.service.IChatMessageService;
 import org.forest.chatollama.util.SpringAiRagUtils;
 import org.springframework.ai.chat.model.ChatResponse;
@@ -20,6 +22,7 @@ import java.util.List;
 @RestController
 @RequestMapping(value = "/ChatMessage")
 @Validated
+@Tag(name = "AiChat消息")
 public class ChatMessageController {
 
 
@@ -30,7 +33,8 @@ public class ChatMessageController {
     private SpringAiRagUtils springAiRagUtils;
 
     @PostMapping(value = "/message", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<ChatResponse> generateStream(@RequestBody @Validated ChatMessageRequest request) {
+    @Operation(summary = "发送会话消息")
+    public Flux<CustomChatResponse> generateStream(@RequestBody @Validated ChatMessageRequest request) {
         return chatMessageService.generateStream(request);
     }
 

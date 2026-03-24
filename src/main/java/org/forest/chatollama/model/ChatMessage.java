@@ -29,8 +29,21 @@ public class ChatMessage implements Serializable {
     @TableId(value = "id", type = IdType.AUTO)
     private Long id;
 
+
     /**
-     * 0：系统  1：用户 2：AI
+     * 学校id
+     */
+    private Long schoolId;
+
+
+    /**
+     * 用户id
+     */
+    private Long userId;
+
+
+    /**
+     * 0：系统  1：用户 2：AI  3：工具
      */
     private Short type;
 
@@ -53,4 +66,17 @@ public class ChatMessage implements Serializable {
      * 创建时间
      */
     private LocalDateTime createTime;
+
+
+    public ChatMessage(Long schoolId, Long userId, Short type, String sessionId, String recordId, String content) {
+        this.schoolId = schoolId;
+        this.userId = userId;
+        this.type = type;
+        this.sessionId = sessionId;
+        this.recordId = recordId;
+        this.content = content;
+    }
+
+    public ChatMessage() {
+    }
 }

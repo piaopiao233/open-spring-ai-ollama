@@ -1,4 +1,4 @@
-package org.forest.chatollama.model;
+package org.forest.chatollama.dto;
 
 import lombok.Data;
 import java.io.Serializable;

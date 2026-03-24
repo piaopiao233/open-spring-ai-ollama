@@ -9,6 +9,8 @@ public interface Const {
         Short USER = 1; // 用户消息
 
         Short ASSISTANT = 2; // 助手消息
+
+        Short TOOL = 3; // 工具消息
     }
 
 }

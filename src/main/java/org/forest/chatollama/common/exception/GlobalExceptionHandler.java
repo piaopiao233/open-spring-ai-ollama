@@ -1,7 +1,7 @@
 package org.forest.chatollama.common.exception;
 
 import lombok.extern.slf4j.Slf4j;
-import org.forest.chatollama.model.Result;
+import org.forest.chatollama.dto.Result;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -61,6 +61,12 @@ public class GlobalExceptionHandler {
     public Result<String> handler(RuntimeException e) {
         log.error("程序异常", e);
         return Result.fail(HttpStatus.INTERNAL_SERVER_ERROR.value(),"服务器出错,请联系管理员", null);
+    }
+
+    @ResponseStatus(HttpStatus.UNAUTHORIZED)
+    @ExceptionHandler(value = AuthException.class)
+    public Result<String> handler(AuthException e) {
+        return Result.fail(e.getCode(), e.getMessage(), null);
     }
 
 }

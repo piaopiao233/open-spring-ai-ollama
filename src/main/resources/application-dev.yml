@@ -29,5 +29,5 @@ spring:
       embedding:
         options:
           model: nomic-embed-text
-system:
-  is-enabel-aes: false #是否开启加密
+iep:
+  url: https://home.raiep.cn/iepback
