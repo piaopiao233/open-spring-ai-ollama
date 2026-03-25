@@ -7,6 +7,8 @@ import org.forest.chatollama.model.ChatSession;
 import org.forest.chatollama.service.IChatSessionService;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
+
 @Service
 public class ChatSessionServiceImpl extends ServiceImpl<ChatSessionMapper, ChatSession> implements IChatSessionService {
 
@@ -15,5 +17,13 @@ public class ChatSessionServiceImpl extends ServiceImpl<ChatSessionMapper, ChatS
         LambdaQueryWrapper<ChatSession> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(ChatSession::getSessionId, sessionId);
         return getOne(wrapper);
+    }
+
+    @Override
+    public void touchSession(String sessionId) {
+        lambdaUpdate()
+                .eq(ChatSession::getSessionId, sessionId)
+                .set(ChatSession::getUpdateTime, LocalDateTime.now())
+                .update();
     }
 }

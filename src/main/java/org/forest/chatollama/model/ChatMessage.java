@@ -1,10 +1,12 @@
 package org.forest.chatollama.model;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
+
 import java.io.Serializable;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 import lombok.Getter;
@@ -21,7 +23,7 @@ import lombok.ToString;
 @Getter
 @Setter
 @ToString
-@TableName("chat_message")
+@TableName(value = "chat_message", autoResultMap = true)
 public class ChatMessage implements Serializable {
 
     private static final long serialVersionUID = 1L;
@@ -63,18 +65,29 @@ public class ChatMessage implements Serializable {
     private String content;
 
     /**
+     * 消息扩展元数据(JSON)
+     */
+    @TableField(value = "meta_json", typeHandler = JacksonTypeHandler.class)
+    private MetaData metaJson;
+
+    /**
      * 创建时间
      */
     private LocalDateTime createTime;
 
 
     public ChatMessage(Long schoolId, Long userId, Short type, String sessionId, String recordId, String content) {
+        this(schoolId, userId, type, sessionId, recordId, content, null);
+    }
+
+    public ChatMessage(Long schoolId, Long userId, Short type, String sessionId, String recordId, String content, MetaData metaJson) {
         this.schoolId = schoolId;
         this.userId = userId;
         this.type = type;
         this.sessionId = sessionId;
         this.recordId = recordId;
         this.content = content;
+        this.metaJson = metaJson;
     }
 
     public ChatMessage() {

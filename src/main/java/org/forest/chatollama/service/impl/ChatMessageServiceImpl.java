@@ -1,5 +1,6 @@
 package org.forest.chatollama.service.impl;
 
+import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.lang.Assert;
 import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
@@ -15,6 +16,7 @@ import org.forest.chatollama.dto.User;
 import org.forest.chatollama.mapper.ChatMessageMapper;
 import org.forest.chatollama.model.ChatMessage;
 import org.forest.chatollama.model.ChatSession;
+import org.forest.chatollama.model.MetaData;
 import org.forest.chatollama.service.IChatMessageService;
 import org.forest.chatollama.service.IChatSessionService;
 import org.forest.chatollama.service.ToolCalling;
@@ -30,8 +32,6 @@ import org.springframework.ai.ollama.api.OllamaChatOptions;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
-
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -57,59 +57,28 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
     public Flux<CustomChatResponse> generateStream(ChatMessageRequest request) {
         User user = UserContext.getUser();
         Assert.isTrue(user != null, "用户未登录");
+
         Long userId = user.getId();
         Long schoolId = user.getSchoolId();
-        String sessionId = request.getSessionId();
         String recordId = IdUtil.fastSimpleUUID();
         String userMessage = request.getMessage();
-        if (StrUtil.isBlank(sessionId)) {
-            sessionId = IdUtil.fastSimpleUUID();
-            String title = userMessage.length() > 20 ? userMessage.substring(0, 20) : userMessage;
-            ChatSession session = new ChatSession(sessionId, title, userId, schoolId);
-            chatSessionService.save(session);
-        } else {
-            ChatSession chatSession = chatSessionService.getBySessionId(sessionId);
-            Assert.isTrue(chatSession != null, "会话不存在");
-            Assert.isTrue(Objects.equals(chatSession.getUserId(), userId), "用户无权限访问会话");
-        }
-        ChatMessage userChat = new ChatMessage(schoolId, userId, Const.ChatMessageType.USER, sessionId, recordId, userMessage);
-        save(userChat);
-        List<ChatMessage> historyMessages = selectBySessionId(sessionId, true);
-        //创建消息列表
-        List<Message> messages = buildMessageList(historyMessages);
-        //消息配置
-        ChatOptions chatOptions = OllamaChatOptions.builder()
-                .disableThinking()
-                .build();
-        //创建工具调用
-        ToolCallback[] toolCallbacks = ToolCalling.toolCallbacks;
-        // 构建 ChatClient（代替你原来的 chatModel.stream）
+        //创建聊天会话id
+        String sessionId = prepareSession(userId, schoolId, request.getSessionId(), userMessage);
+        //保存用户消息
+        saveUserMessage(schoolId, userId, sessionId, recordId, userMessage);
+        //构建消息列表
+        List<Message> messages = buildMessageList(selectBySessionId(sessionId, true));
         ChatClient chatClient = ChatClient.builder(chatModel).build();
-        //ai返回内容
+        //构建 ChatOptions
+        ChatOptions chatOptions = buildChatOptions();
+        //AI响应builder
         StringBuffer fullContent = new StringBuffer();
-        String finalSessionId = sessionId;
+        //构建工具列表
+        ToolCallback[] toolCallbacks = ToolCalling.toolCallbacks;
         return chatClient.prompt().messages(messages).toolCallbacks(toolCallbacks).options(chatOptions).stream()
                 .chatResponse()
-                .map(chatResponse -> {
-                    String delta = chatResponse.getResult().getOutput().getText();
-                    String thinkingPart = chatResponse.getResult().getMetadata().get("thinking");
-                    boolean isThinking = StrUtil.isNotBlank(thinkingPart);
-                    Integer tokens = null;
-                    if (chatResponse.getMetadata() != null
-                            && chatResponse.getMetadata().getUsage() != null) {
-                        tokens = chatResponse.getMetadata().getUsage().getTotalTokens();
-                    }
-                    fullContent.append(delta);
-                    return new CustomChatResponse(delta, isThinking, finalSessionId, recordId, tokens);
-                })
-                .doOnComplete(() -> {
-                    ChatMessage assistantChat = new ChatMessage(schoolId, userId, Const.ChatMessageType.ASSISTANT, finalSessionId, recordId, fullContent.toString());
-                    save(assistantChat);
-                    chatSessionService.lambdaUpdate()
-                            .eq(ChatSession::getSessionId, finalSessionId)
-                            .set(ChatSession::getUpdateTime, LocalDateTime.now())
-                            .update();
-                })
+                .map(chatResponse -> buildStreamResponse(chatResponse, fullContent, sessionId, recordId))
+                .doOnComplete(() -> finishAssistantMessage(schoolId, userId, sessionId, recordId, fullContent))
                 .doOnError(err -> log.error("流异常: ", err));
     }
 
@@ -187,25 +156,123 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
         List<Message> messages = new ArrayList<>();
         for (ChatMessage chatMessage : chatMessageList) {
             Short type = chatMessage.getType();
-            String content = chatMessage.getContent();
             if (Const.ChatMessageType.USER.equals(type)) {
-                messages.add(new UserMessage(content));
+                messages.add(new UserMessage(chatMessage.getContent()));
             } else if (Const.ChatMessageType.ASSISTANT.equals(type)) {
-                messages.add(new AssistantMessage(content));
+                messages.add(new AssistantMessage(chatMessage.getContent()));
             } else if (Const.ChatMessageType.SYSTEM.equals(type)) {
-                messages.add(new SystemMessage(content));
+                messages.add(new SystemMessage(chatMessage.getContent()));
             } else if (Const.ChatMessageType.TOOL.equals(type)) {
-                ToolResponseMessage.ToolResponse toolResp = new ToolResponseMessage.ToolResponse(
-                        chatMessage.getId().toString(),
-                        "get_current_time",
-                        chatMessage.getContent()
-                );
-                messages.add(ToolResponseMessage.builder()
-                        .responses(List.of(toolResp))
-                        .build());
+                messages.add(buildToolResponseMessage(chatMessage));
             }
         }
         return messages;
+    }
+
+    /**
+     * 创建或校验会话，保证后续查询到的历史消息属于当前用户。
+     */
+    private String prepareSession(Long userId, Long schoolId, String sessionId, String userMessage) {
+        if (StrUtil.isBlank(sessionId)) {
+            String newSessionId = IdUtil.fastSimpleUUID();
+            String title = userMessage.length() > 20 ? userMessage.substring(0, 20) : userMessage;
+            chatSessionService.save(new ChatSession(newSessionId, title, userId, schoolId));
+            return newSessionId;
+        }
+
+        ChatSession chatSession = chatSessionService.getBySessionId(sessionId);
+        Assert.isTrue(chatSession != null, "会话不存在");
+        Assert.isTrue(Objects.equals(chatSession.getUserId(), userId), "用户无权限访问会话");
+        return sessionId;
+    }
+
+    /**
+     * 用户消息先落库，再把整段历史组装给模型。
+     */
+    private void saveUserMessage(Long schoolId, Long userId, String sessionId, String recordId, String userMessage) {
+        save(new ChatMessage(schoolId, userId, Const.ChatMessageType.USER, sessionId, recordId, userMessage));
+    }
+
+    private ChatOptions buildChatOptions() {
+        return OllamaChatOptions.builder()
+                .disableThinking()
+                .build();
+    }
+
+
+    /**
+     * 处理流式返回：累计文本、记录工具调用、抽取 token。
+     */
+    private CustomChatResponse buildStreamResponse(ChatResponse chatResponse,
+                                                   StringBuffer fullContent,
+                                                   String sessionId,
+                                                   String recordId) {
+        AssistantMessage output = chatResponse.getResult().getOutput();;
+        //每个轮的 token
+        String delta = StrUtil.nullToDefault(output.getText(), "");
+        fullContent.append(delta);
+
+        String thinkingPart = chatResponse.getResult().getMetadata().get("thinking");
+        boolean isThinking = StrUtil.isNotBlank(thinkingPart);
+        //累计token
+        Integer tokens = extractTotalTokens(chatResponse);
+        return new CustomChatResponse(delta, isThinking, sessionId, recordId, tokens);
+    }
+
+
+    /**
+     * 抽取模型返回的 token 数量。
+     * @param chatResponse
+     * @return
+     */
+    private Integer extractTotalTokens(ChatResponse chatResponse) {
+        if (chatResponse.getMetadata() == null || chatResponse.getMetadata().getUsage() == null) {
+            return null;
+        }
+        return chatResponse.getMetadata().getUsage().getTotalTokens();
+    }
+
+    /**
+     * 流式响应结束后，一次性保存助手最终回答以及工具调用详情。
+     */
+    private void finishAssistantMessage(Long schoolId,
+                                        Long userId,
+                                        String sessionId,
+                                        String recordId,
+                                        StringBuffer fullContent) {
+        //保存助手消息
+        ChatMessage assistantChat = new ChatMessage(
+                schoolId,
+                userId,
+                Const.ChatMessageType.ASSISTANT,
+                sessionId,
+                recordId,
+                fullContent.toString()
+        );
+        save(assistantChat);
+        //刷新会话时间
+        chatSessionService.touchSession(sessionId);
+    }
+    
+
+
+    private ToolResponseMessage buildToolResponseMessage(ChatMessage chatMessage) {
+        String toolCallId = chatMessage.getId() == null ? IdUtil.fastSimpleUUID() : chatMessage.getId().toString();
+        String toolName = "unknown_tool";
+        MetaData metaData = chatMessage.getMetaJson();
+        if (metaData != null && CollUtil.isNotEmpty(metaData.getToolCalls())) {
+            MetaData.ToolCallMeta toolCallMeta = metaData.getToolCalls().get(0);
+            toolCallId = StrUtil.blankToDefault(toolCallMeta.getId(), toolCallId);
+            toolName = StrUtil.blankToDefault(toolCallMeta.getName(), toolName);
+        }
+        ToolResponseMessage.ToolResponse toolResp = new ToolResponseMessage.ToolResponse(
+                toolCallId,
+                toolName,
+                StrUtil.nullToDefault(chatMessage.getContent(), "")
+        );
+        return ToolResponseMessage.builder()
+                .responses(List.of(toolResp))
+                .build();
     }
 
     @Override
