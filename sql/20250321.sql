@@ -24,5 +24,3 @@ CREATE TABLE `chat_message` (
                                 KEY `idx_session_id` (`session_id`),
                                 KEY `idx_user_id` (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='聊天消息记录表';
-
-ALTER TABLE `chat_message` ADD COLUMN `meta_json` JSON NULL COMMENT '消息扩展元数据' AFTER `content`;

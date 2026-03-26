@@ -20,6 +20,7 @@ import org.forest.chatollama.model.MetaData;
 import org.forest.chatollama.service.IChatMessageService;
 import org.forest.chatollama.service.IChatSessionService;
 import org.forest.chatollama.service.ToolCalling;
+import org.forest.chatollama.service.ai.LoggingToolCallAdvisor;
 import org.forest.chatollama.util.SpringAiRagUtils;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.*;
@@ -27,11 +28,12 @@ import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.document.Document;
+import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.ai.ollama.OllamaChatModel;
 import org.springframework.ai.ollama.api.OllamaChatOptions;
-import org.springframework.ai.tool.ToolCallback;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -52,6 +54,8 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
     private final OllamaChatModel chatModel;
     private final SpringAiRagUtils springAiRagUtils;
     private final IChatSessionService chatSessionService;
+    private final ToolCalling toolCalling;
+    private final ToolCallingManager toolCallingManager;
 
     @Override
     public Flux<CustomChatResponse> generateStream(ChatMessageRequest request) {
@@ -66,16 +70,16 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
         String sessionId = prepareSession(userId, schoolId, request.getSessionId(), userMessage);
         //保存用户消息
         saveUserMessage(schoolId, userId, sessionId, recordId, userMessage);
-        //构建消息列表
+        //构建消息上下文
         List<Message> messages = buildMessageList(selectBySessionId(sessionId, true));
         ChatClient chatClient = ChatClient.builder(chatModel).build();
-        //构建 ChatOptions
+        //构建聊天配置
         ChatOptions chatOptions = buildChatOptions();
-        //AI响应builder
+        //AI响应的builder
         StringBuffer fullContent = new StringBuffer();
-        //构建工具列表
-        ToolCallback[] toolCallbacks = ToolCalling.toolCallbacks;
-        return chatClient.prompt().messages(messages).toolCallbacks(toolCallbacks).options(chatOptions).stream()
+        //构建工具advisor
+        LoggingToolCallAdvisor toolCallAdvisor = new LoggingToolCallAdvisor(toolCallingManager, sessionId, userId, schoolId, recordId, this);
+        return chatClient.prompt().messages(messages).advisors(toolCallAdvisor).tools(toolCalling).options(chatOptions).stream()
                 .chatResponse()
                 .map(chatResponse -> buildStreamResponse(chatResponse, fullContent, sessionId, recordId))
                 .doOnComplete(() -> finishAssistantMessage(schoolId, userId, sessionId, recordId, fullContent))
@@ -121,6 +125,7 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
                 }).doOnError(err -> System.err.println("流异常: " + err));
     }
 
+
     @Override
     public Flux<ChatResponse> simpleGenerateStream(String message) {
         ChatOptions chatOptions = OllamaChatOptions.builder()
@@ -159,7 +164,8 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
             if (Const.ChatMessageType.USER.equals(type)) {
                 messages.add(new UserMessage(chatMessage.getContent()));
             } else if (Const.ChatMessageType.ASSISTANT.equals(type)) {
-                messages.add(new AssistantMessage(chatMessage.getContent()));
+                // 助手普通文本消息和工具调用请求消息都归到 ASSISTANT，按元数据区分回放。
+                messages.add(buildAssistantMessage(chatMessage));
             } else if (Const.ChatMessageType.SYSTEM.equals(type)) {
                 messages.add(new SystemMessage(chatMessage.getContent()));
             } else if (Const.ChatMessageType.TOOL.equals(type)) {
@@ -256,23 +262,48 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
     
 
 
-    private ToolResponseMessage buildToolResponseMessage(ChatMessage chatMessage) {
-        String toolCallId = chatMessage.getId() == null ? IdUtil.fastSimpleUUID() : chatMessage.getId().toString();
-        String toolName = "unknown_tool";
+    private AssistantMessage buildAssistantMessage(ChatMessage chatMessage) {
         MetaData metaData = chatMessage.getMetaJson();
-        if (metaData != null && CollUtil.isNotEmpty(metaData.getToolCalls())) {
-            MetaData.ToolCallMeta toolCallMeta = metaData.getToolCalls().get(0);
-            toolCallId = StrUtil.blankToDefault(toolCallMeta.getId(), toolCallId);
-            toolName = StrUtil.blankToDefault(toolCallMeta.getName(), toolName);
+        if (metaData == null || CollUtil.isEmpty(metaData.getToolCalls())) {
+            return new AssistantMessage(chatMessage.getContent());
         }
-        ToolResponseMessage.ToolResponse toolResp = new ToolResponseMessage.ToolResponse(
-                toolCallId,
-                toolName,
-                StrUtil.nullToDefault(chatMessage.getContent(), "")
-        );
-        return ToolResponseMessage.builder()
-                .responses(List.of(toolResp))
+
+        List<AssistantMessage.ToolCall> toolCalls = metaData.getToolCalls().stream()
+                .map(toolCallMeta -> new AssistantMessage.ToolCall(
+                        toolCallMeta.getId(),
+                        toolCallMeta.getType(),
+                        toolCallMeta.getName(),
+                        toolCallMeta.getArguments()
+                ))
+                .toList();
+        return AssistantMessage.builder()
+                .content(StrUtil.nullToDefault(chatMessage.getContent(), ""))
+                .toolCalls(toolCalls)
                 .build();
+    }
+
+    private ToolResponseMessage buildToolResponseMessage(ChatMessage chatMessage) {
+        MetaData metaData = chatMessage.getMetaJson();
+        if (metaData == null || CollUtil.isEmpty(metaData.getToolCalls())) {
+            String toolCallId = chatMessage.getId() == null ? IdUtil.fastSimpleUUID() : chatMessage.getId().toString();
+            ToolResponseMessage.ToolResponse toolResp = new ToolResponseMessage.ToolResponse(
+                    toolCallId,
+                    "unknown_tool",
+                    StrUtil.nullToDefault(chatMessage.getContent(), "")
+            );
+            return ToolResponseMessage.builder()
+                    .responses(List.of(toolResp))
+                    .build();
+        }
+
+        // TOOL 消息只回放工具执行结果，结果优先取 metaJson 中记录的 result。
+        List<ToolResponseMessage.ToolResponse> responses = metaData.getToolCalls().stream()
+                .map(toolCallMeta -> new ToolResponseMessage.ToolResponse(
+                        toolCallMeta.getId(),
+                        toolCallMeta.getName(),
+                        toolCallMeta.getResult()
+                )).toList();
+        return ToolResponseMessage.builder().responses(responses).build();
     }
 
     @Override
