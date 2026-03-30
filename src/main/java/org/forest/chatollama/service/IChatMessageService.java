@@ -34,7 +34,11 @@ public interface IChatMessageService extends IService<ChatMessage> {
     List<ChatMessage> selectBySessionId(String sessionId, boolean isAsc);
 
     //构建多轮对话
-    List<Message> buildMessageList(List<ChatMessage> chatMessageList);
+    List<Message> buildMessageList(List<ChatMessage> chatMessageList, boolean includeToolInfo);
+    
+    default List<Message> buildMessageList(List<ChatMessage> chatMessageList) {
+        return buildMessageList(chatMessageList, true);
+    }
 
     /**
      * 多轮对话转换为多查询变体 再查询知识库

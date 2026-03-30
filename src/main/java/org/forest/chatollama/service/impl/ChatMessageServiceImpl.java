@@ -157,19 +157,24 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
     }
 
     @Override
-    public List<Message> buildMessageList(List<ChatMessage> chatMessageList) {
+    public List<Message> buildMessageList(List<ChatMessage> chatMessageList, boolean includeToolInfo) {
         List<Message> messages = new ArrayList<>();
         for (ChatMessage chatMessage : chatMessageList) {
             Short type = chatMessage.getType();
             if (Const.ChatMessageType.USER.equals(type)) {
                 messages.add(new UserMessage(chatMessage.getContent()));
             } else if (Const.ChatMessageType.ASSISTANT.equals(type)) {
-                // 助手普通文本消息和工具调用请求消息都归到 ASSISTANT，按元数据区分回放。
-                messages.add(buildAssistantMessage(chatMessage));
+                if (includeToolInfo) {
+                    messages.add(buildAssistantMessage(chatMessage));
+                } else {
+                    messages.add(new AssistantMessage(chatMessage.getContent()));
+                }
             } else if (Const.ChatMessageType.SYSTEM.equals(type)) {
                 messages.add(new SystemMessage(chatMessage.getContent()));
             } else if (Const.ChatMessageType.TOOL.equals(type)) {
-                messages.add(buildToolResponseMessage(chatMessage));
+                if (includeToolInfo) {
+                    messages.add(buildToolResponseMessage(chatMessage));
+                }
             }
         }
         return messages;
