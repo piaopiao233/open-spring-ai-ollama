@@ -3,11 +3,7 @@ package org.forest.chatollama.dto;
 import lombok.Data;
 import java.io.Serializable;
 
-/**
- * @author piaopiao
- * @description
- * @date 2021/9/24 13:07
- */
+
 @Data
 public class Result<T> implements Serializable {
     private int code;

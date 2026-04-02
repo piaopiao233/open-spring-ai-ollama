@@ -1,6 +1,5 @@
 package org.forest.chatollama;
 
-import cn.hutool.json.JSONUtil;
 import org.forest.chatollama.model.ChatMessage;
 import org.forest.chatollama.service.IChatMessageService;
 import org.forest.chatollama.util.SpringAiRagUtils;
@@ -22,17 +21,12 @@ import org.springframework.ai.reader.tika.TikaDocumentReader;
 import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
-import org.springframework.ai.vectorstore.filter.Filter;
-import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.jdbc.core.JdbcTemplate;
-
 import java.net.MalformedURLException;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -60,7 +54,7 @@ class ChatOllamaApplicationTests2 {
                 .chatClientBuilder(builder)
                 .numberOfQueries(3)
                 .build();
-        List<Query> expand = queryExpander.expand(new Query("一信通 http调用方式是什么？"));
+        List<Query> expand = queryExpander.expand(new Query("http调用方式是什么？"));
         var retriever = VectorStoreDocumentRetriever.builder()
                 .vectorStore(vectorStore)
                 .topK(5)
@@ -88,7 +82,7 @@ class ChatOllamaApplicationTests2 {
                 .chatClientBuilder(ChatClient.builder(chatModel))
                 .build();
 
-        Query transform = queryTransformer.transform(new Query("jusl是谁"));
+        Query transform = queryTransformer.transform(new Query("成龙是谁"));
         System.out.println(transform);
     }
 
@@ -104,21 +98,13 @@ class ChatOllamaApplicationTests2 {
     private EmbeddingModel embeddingModel;
 
 
-    @Test
-    void test1() {
-        long start = System.currentTimeMillis();
-        float[] embedding = embeddingModel.embed("我");
-        long end = System.currentTimeMillis();
-        System.out.println("耗时" + (end - start) / 1000.0 + "秒");
-        System.out.println(embedding);
-    }
 
 
     @Test
     public void ingestWordDocument() throws MalformedURLException {
         // 1. 加载 Word 文件（本地路径）
-        String url = "http://f.coolvisit.top/d/%E6%96%87%E4%BB%B6%E4%B8%AD%E8%BD%AC%E7%AB%99/%E5%AE%A2%E6%88%B7%E6%9B%B4%E6%96%B0%E5%8C%85/GCD/1.docx";
-        Resource resource = new UrlResource(url);
+        String fileUrl = "";
+        Resource resource = new UrlResource(fileUrl);
         // 2. 使用 TikaDocumentReader 读取（自动提取文本，保留基本结构）
         TikaDocumentReader reader = new TikaDocumentReader(resource);
         // reader.read() 返回 List<Document>，每个 Document 可能对应整篇或按段落/页
@@ -128,33 +114,10 @@ class ChatOllamaApplicationTests2 {
         List<Document> chunks = splitter.apply(documents);
         // 4. 添加到向量数据库（自动 embedding + 存储）
         for (Document doc : chunks) {
-            doc.getMetadata().put("source_url", url);
+            doc.getMetadata().put("source_url", fileUrl);
         }
         vectorStore.add(chunks);
         System.out.println("已存入 " + chunks.size() + " 个 chunk 到向量数据库");
-    }
-
-
-    @Test
-    void test3() {
-        //List<Document> documents = vectorStore.similaritySearch("一信通的短信内容最大多少字符");
-        List<Map<String, Object>> maps = jdbcTemplate.queryForList("SELECT * FROM vector_store");
-        float[] floatArray = convertBytesToFloats((byte[]) maps.get(0).get("embedding"));
-        String jsonStr = JSONUtil.toJsonStr(floatArray);
-        System.out.println(111);
-    }
-
-    public static float[] convertBytesToFloats(byte[] bytes) {
-        if (bytes == null || bytes.length % 4 != 0) {
-            throw new IllegalArgumentException("Byte array must be non-null and multiple of 4 bytes");
-        }
-        float[] floats = new float[bytes.length / 4];
-        ByteBuffer buffer = ByteBuffer.wrap(bytes)
-                .order(ByteOrder.LITTLE_ENDIAN); // MariaDB 使用小端序
-        for (int i = 0; i < floats.length; i++) {
-            floats[i] = buffer.getFloat();
-        }
-        return floats;
     }
 
 
@@ -180,15 +143,9 @@ class ChatOllamaApplicationTests2 {
         System.out.println(111);
     }
 
-    @Test
-    void test5() {
-        FilterExpressionBuilder b = new FilterExpressionBuilder();
-        Filter.Expression expression = b.eq("parent_document_id", "276d5c92-8880-49b8-ab4a-a605fd16dca6").build();
-        vectorStore.delete(expression);
-    }
 
     /**
-     * 多路查询
+     * rag关键词变体多路查询
      */
     @Test
     void test6() {

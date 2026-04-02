@@ -49,21 +49,6 @@ public class ChatMessageController {
         return Result.succ(chatMessages);
     }
 
-    /*
-     * 生成教学设计
-     */
-    @PostMapping(value = "/generateTeachingDesign", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<ChatResponse> generateTeachingDesign(@NotBlank String message, String designTemplate) {
-        StringBuilder prompt = new StringBuilder();
-        if (StrUtil.isNotBlank(designTemplate)) {
-            prompt.append("我选择了一篇文档如下，请参考该文档。").append("\r\n\r\n").append(designTemplate).append("\r\n\r\n");
-        }
-        prompt.append("我现在需要你生成html标签格式的文档，仅输出<body>标签内的部分，不要<!DOCTYPE html>、<html>、<head>等标签。");
-        prompt.append("\r\n\r\n");
-        prompt.append("文档内容要求如下：").append(message);
-        return chatMessageService.simpleGenerateStream(prompt.toString());
-    }
-
     /**
      * 问题查询知识库
      * @param sessionId

@@ -19,23 +19,4 @@ public class ToolCalling {
         return string;
     }
 
-    @Tool(name = "get_student_attendance_by_date", description = "获取某个学生某天的考勤")
-    public String getStudentAttendance(@ToolParam(required = true, description = "姓名") String name,
-                                       @ToolParam(required = false, description = "日期， 可选，格式 yyyy-MM-dd（默认为空，今天也传空值") String date) {
-        if (StrUtil.isBlank(name)) {
-            return "请填写姓名";
-        }
-        if (StrUtil.isBlank(date)) {
-            date = LocalDateTimeUtil.formatNormal(LocalDate.now());
-        }
-        try {
-            LocalDateTimeUtil.parseDate(date);
-        } catch (Exception e) {
-            return "请填写正确的日期格式yyyy-mm-dd";
-        }
-        String string = StrUtil.format("{}的考勤信息如下：一班的{}已签到，二班的{}没有查询到考勤信息", date, name, name);
-        System.out.println("ToolCalling触发 getStudentAttendance：" + string);
-        return string;
-    }
-
 }

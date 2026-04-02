@@ -8,11 +8,9 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.forest.chatollama.common.context.UserContext;
-import org.forest.chatollama.common.exception.Const;
 import org.forest.chatollama.dto.ChatMessageRequest;
 import org.forest.chatollama.dto.CustomChatResponse;
-import org.forest.chatollama.dto.User;
+import org.forest.chatollama.common.exception.Const;
 import org.forest.chatollama.mapper.ChatMessageMapper;
 import org.forest.chatollama.model.ChatMessage;
 import org.forest.chatollama.model.ChatSession;
@@ -36,7 +34,6 @@ import reactor.core.publisher.Flux;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 
 /**
  * <p>
@@ -59,30 +56,22 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
 
     @Override
     public Flux<CustomChatResponse> generateStream(ChatMessageRequest request) {
-        User user = UserContext.getUser();
-        Assert.isTrue(user != null, "用户未登录");
-
-        Long userId = user.getId();
-        Long schoolId = user.getSchoolId();
         String recordId = IdUtil.fastSimpleUUID();
         String userMessage = request.getMessage();
-        //创建聊天会话id
-        String sessionId = prepareSession(userId, schoolId, request.getSessionId(), userMessage);
-        //保存用户消息
-        saveUserMessage(schoolId, userId, sessionId, recordId, userMessage);
-        //构建消息上下文
+        String sessionId = prepareSession(request.getSessionId(), userMessage);
+        // 保存用户消息
+        saveUserMessage(sessionId, recordId, userMessage);
+        //构建上下文
         List<Message> messages = buildMessageList(selectBySessionId(sessionId, true));
         ChatClient chatClient = ChatClient.builder(chatModel).build();
-        //构建聊天配置
         ChatOptions chatOptions = buildChatOptions();
-        //AI响应的builder
         StringBuffer fullContent = new StringBuffer();
-        //构建工具advisor
-        LoggingToolCallAdvisor toolCallAdvisor = new LoggingToolCallAdvisor(toolCallingManager, sessionId, userId, schoolId, recordId, this);
+        //创建工具顾问，在工具执行后 将工具信息落库
+        LoggingToolCallAdvisor toolCallAdvisor = new LoggingToolCallAdvisor(toolCallingManager, sessionId, recordId, this);
         return chatClient.prompt().messages(messages).advisors(toolCallAdvisor).tools(toolCalling).options(chatOptions).stream()
                 .chatResponse()
                 .map(chatResponse -> buildStreamResponse(chatResponse, fullContent, sessionId, recordId))
-                .doOnComplete(() -> finishAssistantMessage(schoolId, userId, sessionId, recordId, fullContent))
+                .doOnComplete(() -> finishAssistantMessage(sessionId, recordId, fullContent))
                 .doOnError(err -> log.error("流异常: ", err));
     }
 
@@ -90,7 +79,7 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
     public Flux<CustomChatResponse> simpleGenerateStreamCustom(String message) {
         ChatOptions chatOptions = OllamaChatOptions.builder()
                 // .toolCallbacks(ToolCalling.toolCallbacks)
-                .disableThinking()
+                .disableThinking() //关闭思考
                 .build();
         Prompt prompt = new Prompt(message, chatOptions);
         // 用于收集完整内容（日志/保存用）
@@ -181,32 +170,33 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
     }
 
     /**
-     * 创建或校验会话，保证后续查询到的历史消息属于当前用户。
+     * 创建或校验会话
      */
-    private String prepareSession(Long userId, Long schoolId, String sessionId, String userMessage) {
+    private String prepareSession(String sessionId, String userMessage) {
         if (StrUtil.isBlank(sessionId)) {
             String newSessionId = IdUtil.fastSimpleUUID();
             String title = userMessage.length() > 20 ? userMessage.substring(0, 20) : userMessage;
-            chatSessionService.save(new ChatSession(newSessionId, title, userId, schoolId));
+            chatSessionService.save(new ChatSession(newSessionId, title));
             return newSessionId;
         }
 
         ChatSession chatSession = chatSessionService.getBySessionId(sessionId);
-        Assert.isTrue(chatSession != null, "会话不存在");
-        Assert.isTrue(Objects.equals(chatSession.getUserId(), userId), "用户无权限访问会话");
+        if (chatSession == null) {
+            Assert.isTrue(false,"会话不存在");
+        }
         return sessionId;
     }
 
     /**
      * 用户消息先落库，再把整段历史组装给模型。
      */
-    private void saveUserMessage(Long schoolId, Long userId, String sessionId, String recordId, String userMessage) {
-        save(new ChatMessage(schoolId, userId, Const.ChatMessageType.USER, sessionId, recordId, userMessage));
+    private void saveUserMessage(String sessionId, String recordId, String userMessage) {
+        save(new ChatMessage(Const.ChatMessageType.USER, sessionId, recordId, userMessage));
     }
 
     private ChatOptions buildChatOptions() {
         return OllamaChatOptions.builder()
-                .disableThinking()
+                .disableThinking()//关闭思考
                 .build();
     }
 
@@ -244,17 +234,11 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
     }
 
     /**
-     * 流式响应结束后，一次性保存助手最终回答以及工具调用详情。
+     * 流式响应结束后，一次性保存助手最终回答
      */
-    private void finishAssistantMessage(Long schoolId,
-                                        Long userId,
-                                        String sessionId,
-                                        String recordId,
-                                        StringBuffer fullContent) {
+    private void finishAssistantMessage(String sessionId, String recordId, StringBuffer fullContent) {
         //保存助手消息
         ChatMessage assistantChat = new ChatMessage(
-                schoolId,
-                userId,
                 Const.ChatMessageType.ASSISTANT,
                 sessionId,
                 recordId,

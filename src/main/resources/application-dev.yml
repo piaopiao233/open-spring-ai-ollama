@@ -1,6 +1,6 @@
 spring:
   datasource:
-    url: jdbc:mariadb://localhost:3306/test?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
+    url: jdbc:mariadb://localhost:3306/ai?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
     username: root
     password: 123456
     hikari:
@@ -14,13 +14,13 @@ spring:
       minimumIdle: 1
   ai:
     vectorstore:
-      qdrant:
-        host: localhost
-        port: 6334
-        collection-name: my-rag
-        initialize-schema: true
-        use-tls: false
-        api-key: RzxqVXK11CDKl1Bt
+#      qdrant:
+#        host: localhost
+#        port: 6334
+#        collection-name: my-rag
+#        initialize-schema: true
+#        use-tls: false
+#        api-key:              #有密钥则输入你的密钥
     ollama:
       base-url: http://localhost:11434
       chat:
@@ -29,5 +29,3 @@ spring:
       embedding:
         options:
           model: nomic-embed-text
-iep:
-  url: https://home.raiep.cn/iepback

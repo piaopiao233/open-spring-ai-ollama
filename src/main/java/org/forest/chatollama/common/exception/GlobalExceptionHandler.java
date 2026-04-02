@@ -63,10 +63,4 @@ public class GlobalExceptionHandler {
         return Result.fail(HttpStatus.INTERNAL_SERVER_ERROR.value(),"服务器出错,请联系管理员", null);
     }
 
-    @ResponseStatus(HttpStatus.UNAUTHORIZED)
-    @ExceptionHandler(value = AuthException.class)
-    public Result<String> handler(AuthException e) {
-        return Result.fail(e.getCode(), e.getMessage(), null);
-    }
-
 }

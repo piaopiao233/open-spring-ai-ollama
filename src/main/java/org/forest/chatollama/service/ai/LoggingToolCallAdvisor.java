@@ -25,8 +25,6 @@ import java.util.List;
 public class LoggingToolCallAdvisor extends ToolCallAdvisor {
 
     private final String sessionId;
-    private final Long userId;
-    private final Long schoolId;
     private final String recordId;
 
     private final IChatMessageService chatMessageService;
@@ -36,14 +34,10 @@ public class LoggingToolCallAdvisor extends ToolCallAdvisor {
      */
     public LoggingToolCallAdvisor(ToolCallingManager toolCallingManager,
                                   String sessionId,
-                                  Long userId,
-                                  Long schoolId,
                                   String recordId,
                                   IChatMessageService chatMessageService) {
         super(toolCallingManager, BaseAdvisor.HIGHEST_PRECEDENCE + 300);
         this.sessionId = sessionId;
-        this.userId = userId;
-        this.schoolId = schoolId;
         this.recordId = recordId;
         this.chatMessageService = chatMessageService;
     }
@@ -72,8 +66,6 @@ public class LoggingToolCallAdvisor extends ToolCallAdvisor {
                         null
                 )).toList();
         ChatMessage assistantToolCallMessage = new ChatMessage(
-                schoolId,
-                userId,
                 Const.ChatMessageType.ASSISTANT,
                 sessionId,
                 recordId,
@@ -88,8 +80,7 @@ public class LoggingToolCallAdvisor extends ToolCallAdvisor {
     protected List<Message> doGetNextInstructionsForToolCallStream(ChatClientRequest chatClientRequest,
                                                                    ChatClientResponse chatClientResponse,
                                                                    ToolExecutionResult toolExecutionResult) {
-        // 只有真正进入工具调用递归时才会走到这里，因此在这里按顺序记录
-        // ASSISTANT 工具请求 和 TOOL 执行结果，避免普通回答误落库。
+        // 工具调用后时会走到这里
         logToolCallBefore(chatClientResponse);
         logToolCallAfter(chatClientResponse, toolExecutionResult);
         return super.doGetNextInstructionsForToolCallStream(chatClientRequest, chatClientResponse, toolExecutionResult);
@@ -110,8 +101,6 @@ public class LoggingToolCallAdvisor extends ToolCallAdvisor {
             return;
         }
         ChatMessage toolResultMessage = new ChatMessage(
-                schoolId,
-                userId,
                 Const.ChatMessageType.TOOL,
                 sessionId,
                 recordId,
@@ -126,9 +115,7 @@ public class LoggingToolCallAdvisor extends ToolCallAdvisor {
         if (toolExecutionResult == null || CollUtil.isEmpty(toolExecutionResult.conversationHistory())) {
             return List.of();
         }
-
-        // 父类默认就是把 conversationHistory 最后一条继续喂给模型，这里直接复用
-        // 这条消息就是当前这轮工具执行后的 ToolResponseMessage。
+        // 最新消息就是当前这轮工具执行后的 ToolResponseMessage。
         Message message = toolExecutionResult.conversationHistory().get(toolExecutionResult.conversationHistory().size() - 1);
         if (!(message instanceof ToolResponseMessage toolResponseMessage)) {
             return List.of();

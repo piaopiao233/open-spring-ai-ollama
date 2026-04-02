@@ -24,19 +24,13 @@ public class ChatSession implements Serializable {
 
     private String title;
 
-    private Long userId;
-
-    private Long schoolId;
-
     private LocalDateTime createTime;
 
     private LocalDateTime updateTime;
 
-    public ChatSession(String sessionId, String title, Long userId, Long schoolId) {
+    public ChatSession(String sessionId, String title) {
         this.sessionId = sessionId;
         this.title = title;
-        this.userId = userId;
-        this.schoolId = schoolId;
     }
 
     public ChatSession() {

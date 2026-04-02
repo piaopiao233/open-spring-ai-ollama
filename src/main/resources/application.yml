@@ -17,14 +17,3 @@ mybatis-plus:
   mapper-locations: classpath:/mapper/*
 #  configuration:
 #    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
-# spring-doc 接口文档
-springdoc:
-  api-docs:
-    enabled: true # 是否启用接口文档
-  override-with-generic-response: false
-knife4j:
-  enable: true # 是否启用 knife4j 增强,如果只是使用 knife4j 的 UI,则可以关闭
-  basic:
-    username: root
-    password: CloudAware@2025
-    enable: true

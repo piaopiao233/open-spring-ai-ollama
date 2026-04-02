@@ -33,18 +33,6 @@ public class ChatMessage implements Serializable {
 
 
     /**
-     * 学校id
-     */
-    private Long schoolId;
-
-
-    /**
-     * 用户id
-     */
-    private Long userId;
-
-
-    /**
      * 0：系统  1：用户 2：AI  3：工具
      */
     private Short type;
@@ -76,13 +64,11 @@ public class ChatMessage implements Serializable {
     private LocalDateTime createTime;
 
 
-    public ChatMessage(Long schoolId, Long userId, Short type, String sessionId, String recordId, String content) {
-        this(schoolId, userId, type, sessionId, recordId, content, null);
+    public ChatMessage(Short type, String sessionId, String recordId, String content) {
+        this(type, sessionId, recordId, content, null);
     }
 
-    public ChatMessage(Long schoolId, Long userId, Short type, String sessionId, String recordId, String content, MetaData metaJson) {
-        this.schoolId = schoolId;
-        this.userId = userId;
+    public ChatMessage(Short type, String sessionId, String recordId, String content, MetaData metaJson) {
         this.type = type;
         this.sessionId = sessionId;
         this.recordId = recordId;
