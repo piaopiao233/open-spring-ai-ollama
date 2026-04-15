@@ -25,8 +25,6 @@ public interface IChatMessageService extends IService<ChatMessage> {
 
     Flux<CustomChatResponse> simpleGenerateStreamCustom(String message);
 
-    Flux<ChatResponse> simpleGenerateStream(String message);
-
     default List<ChatMessage> selectBySessionId(String sessionId) {
         return selectBySessionId(sessionId, true);
     }

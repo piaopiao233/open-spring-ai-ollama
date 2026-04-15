@@ -19,6 +19,39 @@ public class MetaData {
      */
     private List<ToolCallMeta> toolCalls;
 
+    /**
+     * 本条用户消息中附带的图片信息。
+     */
+    private List<ImageMeta> images;
+
+    /**
+     * 仅设置工具调用元数据。
+     *
+     * @param toolCalls 工具调用列表
+     */
+    public MetaData(List<ToolCallMeta> toolCalls) {
+        this.toolCalls = toolCalls;
+    }
+
+    /**
+     * 创建图片元数据。
+     */
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ImageMeta {
+
+        /**
+         * 图片地址
+         */
+        private String url;
+
+        /**
+         * 图片MIME类型
+         */
+        private String mimeType;
+    }
+
     @Data
     @NoArgsConstructor
     @AllArgsConstructor

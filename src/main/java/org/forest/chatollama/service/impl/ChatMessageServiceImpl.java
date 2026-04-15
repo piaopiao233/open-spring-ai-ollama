@@ -3,14 +3,17 @@ package org.forest.chatollama.service.impl;
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.lang.Assert;
 import cn.hutool.core.util.IdUtil;
+import cn.hutool.core.util.ObjectUtil;
 import cn.hutool.core.util.StrUtil;
+import cn.hutool.http.HttpUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.forest.chatollama.common.exception.Const;
+import org.forest.chatollama.dto.ChatImageItem;
 import org.forest.chatollama.dto.ChatMessageRequest;
 import org.forest.chatollama.dto.CustomChatResponse;
-import org.forest.chatollama.common.exception.Const;
 import org.forest.chatollama.mapper.ChatMessageMapper;
 import org.forest.chatollama.model.ChatMessage;
 import org.forest.chatollama.model.ChatSession;
@@ -25,11 +28,16 @@ import org.springframework.ai.chat.messages.*;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.content.Media;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.ai.ollama.OllamaChatModel;
 import org.springframework.ai.ollama.api.OllamaChatOptions;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
+import org.springframework.util.MimeType;
+import org.springframework.util.MimeTypeUtils;
 import reactor.core.publisher.Flux;
 
 import java.util.ArrayList;
@@ -54,50 +62,60 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
     private final ToolCalling toolCalling;
     private final ToolCallingManager toolCallingManager;
 
+    /**
+     * 发送流式会话消息。
+     *
+     * @param request 会话请求
+     * @return 流式响应
+     */
     @Override
     public Flux<CustomChatResponse> generateStream(ChatMessageRequest request) {
         String recordId = IdUtil.fastSimpleUUID();
         String userMessage = request.getMessage();
         String sessionId = prepareSession(request.getSessionId(), userMessage);
-        // 保存用户消息
-        saveUserMessage(sessionId, recordId, userMessage);
-        //构建上下文
+        // 先把当前轮用户消息落库，图片地址会一并写入 meta_json。
+        saveUserMessage(sessionId, recordId, request);
+        // 再把完整上下文回放给模型，确保多轮场景下历史图片也能被带上。
         List<Message> messages = buildMessageList(selectBySessionId(sessionId, true));
         ChatClient chatClient = ChatClient.builder(chatModel).build();
         ChatOptions chatOptions = buildChatOptions();
         StringBuffer fullContent = new StringBuffer();
-        //创建工具顾问，在工具执行后 将工具信息落库
         LoggingToolCallAdvisor toolCallAdvisor = new LoggingToolCallAdvisor(toolCallingManager, sessionId, recordId, this);
-        return chatClient.prompt().messages(messages).advisors(toolCallAdvisor).tools(toolCalling).options(chatOptions).stream()
+        return chatClient.prompt()
+                .messages(messages)
+                .advisors(toolCallAdvisor)
+                .tools(toolCalling)
+                .options(chatOptions)
+                .stream()
                 .chatResponse()
                 .map(chatResponse -> buildStreamResponse(chatResponse, fullContent, sessionId, recordId))
                 .doOnComplete(() -> finishAssistantMessage(sessionId, recordId, fullContent))
                 .doOnError(err -> log.error("流异常: ", err));
     }
 
+    /**
+     * 发送简单流式消息并转换为自定义响应。
+     *
+     * @param message 用户消息
+     * @return 自定义流式响应
+     */
     @Override
     public Flux<CustomChatResponse> simpleGenerateStreamCustom(String message) {
         ChatOptions chatOptions = OllamaChatOptions.builder()
-                // .toolCallbacks(ToolCalling.toolCallbacks)
-                .disableThinking() //关闭思考
+                .disableThinking()
                 .build();
         Prompt prompt = new Prompt(message, chatOptions);
-        // 用于收集完整内容（日志/保存用）
         StringBuffer fullContent = new StringBuffer();
         return chatModel.stream(prompt)
                 .map(chatResponse -> {
-                    // 1. 获取当前 chunk 文本
                     String delta = chatResponse.getResult().getOutput().getText();
-                    // 2. 判断是否思考过程（Spring AI Ollama 官方方式）
                     String thinkingPart = chatResponse.getResult().getMetadata().get("thinking");
                     boolean isThinking = StrUtil.isNotBlank(thinkingPart);
-                    // 3. token 数量（仅最后一块才有，非流式 usage 会在最后一 chunk 返回）
                     Integer tokens = null;
                     if (chatResponse.getMetadata() != null
                             && chatResponse.getMetadata().getUsage() != null) {
                         tokens = chatResponse.getMetadata().getUsage().getTotalTokens();
                     }
-                    // 4. 累积完整内容（日志用）
                     fullContent.append(delta);
                     return new CustomChatResponse(
                             delta,
@@ -107,32 +125,19 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
                             tokens
                     );
                 })
-                .doOnComplete(() -> {
-                    System.out.println("完整响应: " + fullContent);
-                }).doOnCancel(() -> {
-                    System.out.println("用户取消，部分内容: " + fullContent);
-                }).doOnError(err -> System.err.println("流异常: " + err));
+                .doOnComplete(() -> System.out.println("完整响应: " + fullContent))
+                .doOnCancel(() -> System.out.println("用户取消，部分内容: " + fullContent))
+                .doOnError(err -> System.err.println("流异常: " + err));
     }
 
 
-    @Override
-    public Flux<ChatResponse> simpleGenerateStream(String message) {
-        ChatOptions chatOptions = OllamaChatOptions.builder()
-                .disableThinking()
-                // .toolCallbacks(ToolCalling.toolCallbacks)
-                .build();
-        Prompt prompt = new Prompt(message, chatOptions);
-        Flux<ChatResponse> flux = chatModel.stream(prompt);
-        // 使用 share() 或 cache() 让多个订阅者共享同一份流（非常重要！）
-        Flux<ChatResponse> sharedFlux = flux.share();   // 或 .cache() 如果你确定只有一个订阅者
-        // 异步收集完整内容并保存（不阻塞主流程）
-        sharedFlux.map(resp -> resp.getResult().getOutput().getText())
-                .reduce("", String::concat)           // 拼接所有 token
-                .doOnNext(content -> log.info("完整响应: {}", content)).subscribe();   // 触发收集
-        // 返回给调用方的是原始流
-        return sharedFlux;
-    }
-
+    /**
+     * 按会话查询消息列表。
+     *
+     * @param sessionId 会话id
+     * @param isAsc 是否升序
+     * @return 消息列表
+     */
     @Override
     public List<ChatMessage> selectBySessionId(String sessionId, boolean isAsc) {
         LambdaQueryWrapper<ChatMessage> queryWrapper = new LambdaQueryWrapper<>();
@@ -145,13 +150,20 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
         return list(queryWrapper);
     }
 
+    /**
+     * 构建发送给模型的消息列表。
+     *
+     * @param chatMessageList 历史消息列表
+     * @param includeToolInfo 是否包含工具消息
+     * @return 消息列表
+     */
     @Override
     public List<Message> buildMessageList(List<ChatMessage> chatMessageList, boolean includeToolInfo) {
         List<Message> messages = new ArrayList<>();
         for (ChatMessage chatMessage : chatMessageList) {
             Short type = chatMessage.getType();
             if (Const.ChatMessageType.USER.equals(type)) {
-                messages.add(new UserMessage(chatMessage.getContent()));
+                messages.add(buildUserMessage(chatMessage));
             } else if (Const.ChatMessageType.ASSISTANT.equals(type)) {
                 if (includeToolInfo) {
                     messages.add(buildAssistantMessage(chatMessage));
@@ -160,17 +172,19 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
                 }
             } else if (Const.ChatMessageType.SYSTEM.equals(type)) {
                 messages.add(new SystemMessage(chatMessage.getContent()));
-            } else if (Const.ChatMessageType.TOOL.equals(type)) {
-                if (includeToolInfo) {
-                    messages.add(buildToolResponseMessage(chatMessage));
-                }
+            } else if (Const.ChatMessageType.TOOL.equals(type) && includeToolInfo) {
+                messages.add(buildToolResponseMessage(chatMessage));
             }
         }
         return messages;
     }
 
     /**
-     * 创建或校验会话
+     * 创建或校验会话。
+     *
+     * @param sessionId 会话id
+     * @param userMessage 用户消息
+     * @return 可用会话id
      */
     private String prepareSession(String sessionId, String userMessage) {
         if (StrUtil.isBlank(sessionId)) {
@@ -179,52 +193,63 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
             chatSessionService.save(new ChatSession(newSessionId, title));
             return newSessionId;
         }
-
         ChatSession chatSession = chatSessionService.getBySessionId(sessionId);
         if (chatSession == null) {
-            Assert.isTrue(false,"会话不存在");
+            Assert.isTrue(false, "会话不存在");
         }
         return sessionId;
     }
 
     /**
-     * 用户消息先落库，再把整段历史组装给模型。
+     * 保存用户消息。
+     *
+     * @param sessionId 会话id
+     * @param recordId 记录id
+     * @param request 用户请求
      */
-    private void saveUserMessage(String sessionId, String recordId, String userMessage) {
-        save(new ChatMessage(Const.ChatMessageType.USER, sessionId, recordId, userMessage));
+    private void saveUserMessage(String sessionId, String recordId, ChatMessageRequest request) {
+        MetaData metaData = buildUserMessageMetaData(request.getImageList());
+        save(new ChatMessage(Const.ChatMessageType.USER, sessionId, recordId, request.getMessage(), metaData));
     }
 
+    /**
+     * 构建对话参数。
+     *
+     * @return 对话参数
+     */
     private ChatOptions buildChatOptions() {
         return OllamaChatOptions.builder()
-                .disableThinking()//关闭思考
+                .disableThinking()
                 .build();
     }
 
-
     /**
-     * 处理流式返回：累计文本、记录工具调用、抽取 token。
+     * 构建流式响应片段。
+     *
+     * @param chatResponse 模型响应
+     * @param fullContent 完整响应缓冲区
+     * @param sessionId 会话id
+     * @param recordId 记录id
+     * @return 自定义流式响应
      */
     private CustomChatResponse buildStreamResponse(ChatResponse chatResponse,
                                                    StringBuffer fullContent,
                                                    String sessionId,
                                                    String recordId) {
-        AssistantMessage output = chatResponse.getResult().getOutput();;
-        //每个轮的 token
+        AssistantMessage output = chatResponse.getResult().getOutput();
         String delta = StrUtil.nullToDefault(output.getText(), "");
         fullContent.append(delta);
-
         String thinkingPart = chatResponse.getResult().getMetadata().get("thinking");
         boolean isThinking = StrUtil.isNotBlank(thinkingPart);
-        //累计token
         Integer tokens = extractTotalTokens(chatResponse);
         return new CustomChatResponse(delta, isThinking, sessionId, recordId, tokens);
     }
 
-
     /**
-     * 抽取模型返回的 token 数量。
-     * @param chatResponse
-     * @return
+     * 提取总 token 数。
+     *
+     * @param chatResponse 模型响应
+     * @return token 数
      */
     private Integer extractTotalTokens(ChatResponse chatResponse) {
         if (chatResponse.getMetadata() == null || chatResponse.getMetadata().getUsage() == null) {
@@ -234,10 +259,13 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
     }
 
     /**
-     * 流式响应结束后，一次性保存助手最终回答
+     * 流式响应结束后保存助手消息。
+     *
+     * @param sessionId 会话id
+     * @param recordId 记录id
+     * @param fullContent 完整响应
      */
     private void finishAssistantMessage(String sessionId, String recordId, StringBuffer fullContent) {
-        //保存助手消息
         ChatMessage assistantChat = new ChatMessage(
                 Const.ChatMessageType.ASSISTANT,
                 sessionId,
@@ -245,18 +273,37 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
                 fullContent.toString()
         );
         save(assistantChat);
-        //刷新会话时间
         chatSessionService.touchSession(sessionId);
     }
-    
 
+    /**
+     * 构建用户消息。
+     *
+     * @param chatMessage 用户消息实体
+     * @return Spring AI 用户消息
+     */
+    private UserMessage buildUserMessage(ChatMessage chatMessage) {
+        List<Media> mediaList = buildMediaList(chatMessage.getMetaJson());
+        if (CollUtil.isEmpty(mediaList)) {
+            return new UserMessage(chatMessage.getContent());
+        }
+        return UserMessage.builder()
+                .text(chatMessage.getContent())
+                .media(mediaList)
+                .build();
+    }
 
+    /**
+     * 构建助手消息。
+     *
+     * @param chatMessage 助手消息实体
+     * @return Spring AI 助手消息
+     */
     private AssistantMessage buildAssistantMessage(ChatMessage chatMessage) {
         MetaData metaData = chatMessage.getMetaJson();
         if (metaData == null || CollUtil.isEmpty(metaData.getToolCalls())) {
             return new AssistantMessage(chatMessage.getContent());
         }
-
         List<AssistantMessage.ToolCall> toolCalls = metaData.getToolCalls().stream()
                 .map(toolCallMeta -> new AssistantMessage.ToolCall(
                         toolCallMeta.getId(),
@@ -271,6 +318,12 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
                 .build();
     }
 
+    /**
+     * 构建工具响应消息。
+     *
+     * @param chatMessage 工具消息实体
+     * @return Spring AI 工具消息
+     */
     private ToolResponseMessage buildToolResponseMessage(ChatMessage chatMessage) {
         MetaData metaData = chatMessage.getMetaJson();
         if (metaData == null || CollUtil.isEmpty(metaData.getToolCalls())) {
@@ -284,29 +337,89 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
                     .responses(List.of(toolResp))
                     .build();
         }
-
-        // TOOL 消息只回放工具执行结果，结果优先取 metaJson 中记录的 result。
         List<ToolResponseMessage.ToolResponse> responses = metaData.getToolCalls().stream()
                 .map(toolCallMeta -> new ToolResponseMessage.ToolResponse(
                         toolCallMeta.getId(),
                         toolCallMeta.getName(),
                         toolCallMeta.getResult()
-                )).toList();
-        return ToolResponseMessage.builder().responses(responses).build();
+                ))
+                .toList();
+        return ToolResponseMessage.builder()
+                .responses(responses)
+                .build();
     }
 
+    /**
+     * 多轮对话生成多查询检索结果。
+     *
+     * @param sessionId 会话id
+     * @param currentQuestion 当前问题
+     * @return 文档列表
+     */
     @Override
     public List<Document> multiQuerySimilaritySearch(String sessionId, String currentQuestion) {
         List<Message> messages = new ArrayList<>();
         if (StrUtil.isNotBlank(sessionId)) {
-            //查询所有的对话
             List<ChatMessage> chatMessages = selectBySessionId(sessionId, true);
-            //构建多轮对话
             messages = buildMessageList(chatMessages);
         }
-        //获取上下文的查询变体
         List<String> queries = springAiRagUtils.generateMultiCondensedQueries(messages, currentQuestion);
         System.out.printf("查询变体有：%s%n", queries);
         return springAiRagUtils.multiQuerySimilaritySearch(queries);
     }
+
+    /**
+     * 构建用户消息元数据。
+     *
+     * @param imageList 图片列表
+     * @return 元数据
+     */
+    private MetaData buildUserMessageMetaData(List<ChatImageItem> imageList) {
+        if (CollUtil.isEmpty(imageList)) {
+            return null;
+        }
+        List<MetaData.ImageMeta> images = imageList.stream()
+                .filter(ObjectUtil::isNotNull)
+                .filter(item -> StrUtil.isNotBlank(item.getUrl()))
+                .map(item -> new MetaData.ImageMeta(item.getUrl(), item.getMimeType()))
+                .toList();
+        if (CollUtil.isEmpty(images)) {
+            return null;
+        }
+        MetaData metaData = new MetaData();
+        metaData.setImages(images);
+        return metaData;
+    }
+
+    /**
+     * 从消息元数据中构建图片媒体列表。
+     *
+     * @param metaData 元数据
+     * @return 图片媒体列表
+     */
+    private List<Media> buildMediaList(MetaData metaData) {
+        if (metaData == null || CollUtil.isEmpty(metaData.getImages())) {
+            return List.of();
+        }
+        // 历史多模态消息在回放时需要重新挂载图片，并将远程图片下载为字节内容再发给 Ollama。
+        return metaData.getImages().stream()
+                .filter(ObjectUtil::isNotNull)
+                .filter(imageMeta -> StrUtil.isNotBlank(imageMeta.getUrl()))
+                .map(this::buildImageMedia)
+                .toList();
+    }
+
+    /**
+     * 构建单张图片媒体对象。
+     *
+     * @param imageMeta 图片元数据
+     * @return Spring AI 图片媒体对象
+     */
+    private Media buildImageMedia(MetaData.ImageMeta imageMeta) {
+        byte[] bytes = HttpUtil.downloadBytes(imageMeta.getUrl());
+        Resource resource = new ByteArrayResource(bytes);
+        MimeType mimeType =  MimeTypeUtils.parseMimeType(imageMeta.getMimeType());
+        return new Media(mimeType, resource);
+    }
+
 }
