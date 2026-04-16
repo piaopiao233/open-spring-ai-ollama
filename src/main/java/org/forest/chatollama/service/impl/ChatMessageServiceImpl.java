@@ -90,6 +90,7 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
                 .chatResponse()
                 .map(chatResponse -> buildStreamResponse(chatResponse, fullContent, sessionId, recordId))
                 .doOnComplete(() -> finishAssistantMessage(sessionId, recordId, fullContent))
+                .doOnCancel(() -> finishAssistantMessage(sessionId, recordId, fullContent))
                 .doOnError(err -> log.error("流异常: ", err));
     }
 
@@ -266,6 +267,9 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
      * @param fullContent 完整响应
      */
     private void finishAssistantMessage(String sessionId, String recordId, StringBuffer fullContent) {
+        if (fullContent.isEmpty()){
+            return;
+        }
         ChatMessage assistantChat = new ChatMessage(
                 Const.ChatMessageType.ASSISTANT,
                 sessionId,
