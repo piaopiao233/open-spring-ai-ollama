@@ -42,6 +42,7 @@ import reactor.core.publisher.Flux;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * <p>
@@ -80,6 +81,7 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
         ChatClient chatClient = ChatClient.builder(chatModel).build();
         ChatOptions chatOptions = buildChatOptions();
         StringBuffer fullContent = new StringBuffer();
+        AtomicReference<Integer> tokenCount = new AtomicReference<>();
         LoggingToolCallAdvisor toolCallAdvisor = new LoggingToolCallAdvisor(toolCallingManager, sessionId, recordId, this);
         return chatClient.prompt()
                 .messages(messages)
@@ -88,9 +90,9 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
                 .options(chatOptions)
                 .stream()
                 .chatResponse()
-                .map(chatResponse -> buildStreamResponse(chatResponse, fullContent, sessionId, recordId))
-                .doOnComplete(() -> finishAssistantMessage(sessionId, recordId, fullContent))
-                .doOnCancel(() -> finishAssistantMessage(sessionId, recordId, fullContent))
+                .map(chatResponse -> buildStreamResponse(chatResponse, fullContent, tokenCount, sessionId, recordId))
+                .doOnComplete(() -> finishAssistantMessage(sessionId, recordId, fullContent, tokenCount.get()))
+                .doOnCancel(() -> finishAssistantMessage(sessionId, recordId, fullContent, tokenCount.get()))
                 .doOnError(err -> log.error("流异常: ", err));
     }
 
@@ -229,12 +231,14 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
      *
      * @param chatResponse 模型响应
      * @param fullContent 完整响应缓冲区
+     * @param tokenCount token 使用数
      * @param sessionId 会话id
      * @param recordId 记录id
      * @return 自定义流式响应
      */
     private CustomChatResponse buildStreamResponse(ChatResponse chatResponse,
                                                    StringBuffer fullContent,
+                                                   AtomicReference<Integer> tokenCount,
                                                    String sessionId,
                                                    String recordId) {
         AssistantMessage output = chatResponse.getResult().getOutput();
@@ -243,6 +247,9 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
         String thinkingPart = chatResponse.getResult().getMetadata().get("thinking");
         boolean isThinking = StrUtil.isNotBlank(thinkingPart);
         Integer tokens = extractTotalTokens(chatResponse);
+        if (ObjectUtil.isNotNull(tokens)) {
+            tokenCount.set(tokens);
+        }
         return new CustomChatResponse(delta, isThinking, sessionId, recordId, tokens);
     }
 
@@ -265,8 +272,9 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
      * @param sessionId 会话id
      * @param recordId 记录id
      * @param fullContent 完整响应
+     * @param tokenCount token 使用数
      */
-    private void finishAssistantMessage(String sessionId, String recordId, StringBuffer fullContent) {
+    private void finishAssistantMessage(String sessionId, String recordId, StringBuffer fullContent, Integer tokenCount) {
         if (fullContent.isEmpty()){
             return;
         }
@@ -276,6 +284,7 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
                 recordId,
                 fullContent.toString()
         );
+        assistantChat.setTokenCount(tokenCount);
         save(assistantChat);
         chatSessionService.touchSession(sessionId);
     }

@@ -59,6 +59,11 @@ public class ChatMessage implements Serializable {
     private MetaData metaJson;
 
     /**
+     * token 使用数
+     */
+    private Integer tokenCount;
+
+    /**
      * 创建时间
      */
     private LocalDateTime createTime;
