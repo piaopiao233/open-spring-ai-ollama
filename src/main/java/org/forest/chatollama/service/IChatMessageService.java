@@ -43,5 +43,9 @@ public interface IChatMessageService extends IService<ChatMessage> {
      */
     List<Document> multiQuerySimilaritySearch(String sessionId, String currentQuestion);
 
+    void deleteBySessionId(String sessionId);
+
+
+
 
 }

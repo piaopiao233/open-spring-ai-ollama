@@ -33,6 +33,8 @@ import org.springframework.ai.document.Document;
 import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.ai.ollama.OllamaChatModel;
 import org.springframework.ai.ollama.api.OllamaChatOptions;
+import org.springframework.context.annotation.Lazy;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
@@ -59,9 +61,15 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
 
     private final OllamaChatModel chatModel;
     private final SpringAiRagUtils springAiRagUtils;
-    private final IChatSessionService chatSessionService;
     private final ToolCalling toolCalling;
     private final ToolCallingManager toolCallingManager;
+    private IChatSessionService chatSessionService;
+
+    @Autowired
+    @Lazy
+    public void setChatSessionService(IChatSessionService chatSessionService) {
+        this.chatSessionService = chatSessionService;
+    }
 
     /**
      * 发送流式会话消息。
@@ -420,6 +428,18 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
                 .filter(imageMeta -> StrUtil.isNotBlank(imageMeta.getUrl()))
                 .map(this::buildImageMedia)
                 .toList();
+    }
+
+    /**
+     * 根据会话ID删除消息。
+     *
+     * @param sessionId 会话ID
+     */
+    @Override
+    public void deleteBySessionId(String sessionId) {
+        LambdaQueryWrapper<ChatMessage> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(ChatMessage::getSessionId, sessionId);
+        remove(wrapper);
     }
 
     /**

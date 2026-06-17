@@ -1,16 +1,14 @@
 package org.forest.chatollama.controller;
 
-import cn.hutool.core.util.StrUtil;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.NotBlank;
 import org.forest.chatollama.dto.ChatMessageRequest;
-import org.forest.chatollama.model.ChatMessage;
 import org.forest.chatollama.dto.CustomChatResponse;
 import org.forest.chatollama.dto.Result;
+import org.forest.chatollama.model.ChatMessage;
 import org.forest.chatollama.service.IChatMessageService;
 import org.forest.chatollama.util.SpringAiRagUtils;
-import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.document.Document;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
