@@ -4,6 +4,7 @@
 基于 `Spring Boot 3` + `Spring AI` + `Ollama` + `MariaDB` + `Qdrant` 构建，支持流式聊天、多轮对话落库、工具调用、RAG 检索增强以及查询变体召回。
 
 ---
+> 前端项目：[chat-web](https://gitee.com/jusenlin/chat-web)
 
 ## 1. 项目简介
 
