@@ -4,7 +4,7 @@
 基于 `Spring Boot 3` + `Spring AI` + `Ollama` + `MariaDB` + `Qdrant` 构建，支持流式聊天、多轮对话落库、工具调用、RAG 检索增强以及查询变体召回。
 
 ---
-> 前端项目：[chat-web](https://gitee.com/jusenlin/chat-web)
+<h2>前端项目：<a href="https://gitee.com/jusenlin/chat-web">chat-web</a></h2>
 
 ## 1. 项目简介
 
@@ -55,9 +55,21 @@
 - 查询类工具
 - 系统能力类工具
 - 业务接口类工具
+- **网络搜索工具（Tavily）**
 
 这类能力特别适合后续做“AI 调系统”“AI 调接口”“AI 查业务数据”场景。
 
+#### 网络搜索工具
+
+项目集成了 [Tavily](https://tavily.com/) 网络搜索引擎，AI 模型可通过 Tool Calling 实时搜索互联网获取最新资讯。
+
+配置方式：
+
+```yml
+tavily:
+  api-key: your-api-key
+  max-results: 10
+```
 ### 支持 RAG 与查询变体
 
 项目不仅支持向量知识库检索，还支持将用户问题扩展为多个查询变体，再进行召回，这种方式通常能比单次原问题检索获得更好的匹配结果。
@@ -361,7 +373,9 @@ src/main/java/org/forest/chatollama
 ├─ mapper          # MyBatis-Plus 数据访问
 ├─ model           # 数据模型
 ├─ service         # 业务逻辑、工具调用、会话处理
-├─ util            # RAG 等工具类
+│  └─ ai           # AI相关工具调用（网络搜索等）
+├─ util            # 工具类
+│  └─ websearch    # 网络搜索工具（Tavily等）
 └─ common          # 通用异常和常量
 ```
 

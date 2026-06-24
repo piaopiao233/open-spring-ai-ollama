@@ -14,13 +14,13 @@ spring:
       minimumIdle: 1
   ai:
     vectorstore:
-#      qdrant:
-#        host: localhost
-#        port: 6334
-#        collection-name: my-rag
-#        initialize-schema: true
-#        use-tls: false
-#        api-key:              #有密钥则输入你的密钥
+    #      qdrant:
+    #        host: localhost
+    #        port: 6334
+    #        collection-name: my-rag
+    #        initialize-schema: true
+    #        use-tls: false
+    #        api-key:              #有密钥则输入你的密钥
     ollama:
       base-url: http://localhost:11434
       chat:
@@ -29,3 +29,7 @@ spring:
       embedding:
         options:
           model: nomic-embed-text
+
+tavily:
+  api-key: https://www.tavily.com/ 官网申请你的api-key
+  max-results: 10

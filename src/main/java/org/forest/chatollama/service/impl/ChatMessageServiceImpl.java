@@ -6,6 +6,9 @@ import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.ObjectUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.http.HttpUtil;
+import cn.hutool.json.JSONArray;
+import cn.hutool.json.JSONObject;
+import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +25,7 @@ import org.forest.chatollama.service.IChatMessageService;
 import org.forest.chatollama.service.IChatSessionService;
 import org.forest.chatollama.service.ToolCalling;
 import org.forest.chatollama.service.ai.LoggingToolCallAdvisor;
+import org.forest.chatollama.service.ai.WebSearchToolCalling;
 import org.forest.chatollama.util.SpringAiRagUtils;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.*;
@@ -59,9 +63,15 @@ import java.util.concurrent.atomic.AtomicReference;
 @RequiredArgsConstructor
 public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatMessage> implements IChatMessageService {
 
+    /**
+     * 网络搜索工具名称常量
+     */
+    private static final String WEB_SEARCH_TOOL_NAME = "web_search";
+
     private final OllamaChatModel chatModel;
     private final SpringAiRagUtils springAiRagUtils;
     private final ToolCalling toolCalling;
+    private final WebSearchToolCalling webSearchToolCalling;
     private final ToolCallingManager toolCallingManager;
     private IChatSessionService chatSessionService;
 
@@ -94,7 +104,7 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
         return chatClient.prompt()
                 .messages(messages)
                 .advisors(toolCallAdvisor)
-                .tools(toolCalling)
+                .tools(toolCalling,webSearchToolCalling)
                 .options(chatOptions)
                 .stream()
                 .chatResponse()
@@ -158,7 +168,17 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
         } else {
             queryWrapper.orderByDesc(ChatMessage::getId);
         }
-        return list(queryWrapper);
+        List<ChatMessage> chatMessages = list(queryWrapper);
+        // 格式化工具信息，清除网络搜索结果的content
+        for (ChatMessage chatMessage : chatMessages) {
+            MetaData metaJson = chatMessage.getMetaJson();
+            if (metaJson != null && metaJson.getToolCalls() != null) {
+                for (MetaData.ToolCallMeta toolCall : metaJson.getToolCalls()) {
+                    formatToolCalls(toolCall);
+                }
+            }
+        }
+        return chatMessages;
     }
 
     /**
@@ -453,6 +473,38 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
         Resource resource = new ByteArrayResource(bytes);
         MimeType mimeType =  MimeTypeUtils.parseMimeType(imageMeta.getMimeType());
         return new Media(mimeType, resource);
+    }
+
+    /**
+     * 格式化工具调用信息
+     * 如果是网络搜索工具，将搜索结果中的content设置为null，减少返回给前端的数据量
+     *
+     * @param toolCallMeta 工具调用元数据
+     */
+    private void formatToolCalls(MetaData.ToolCallMeta toolCallMeta) {
+        if (WEB_SEARCH_TOOL_NAME.equals(toolCallMeta.getName())) {
+            toolCallMeta.setResult(formatWebSearchResult(toolCallMeta.getResult()));
+        }
+    }
+
+    /**
+     * 格式化网络搜索结果
+     * 将搜索结果中的content字段设置为null
+     *
+     * @param resultJson 搜索结果JSON字符串
+     * @return 格式化后的JSON字符串
+     */
+    private String formatWebSearchResult(String resultJson) {
+        try {
+            JSONArray results = JSONUtil.parseArray(resultJson);
+            for (int i = 0; i < results.size(); i++) {
+                JSONObject item = results.getJSONObject(i);
+                item.set("content", null);
+            }
+            return results.toString();
+        } catch (Exception e) {
+            return resultJson;
+        }
     }
 
 }
