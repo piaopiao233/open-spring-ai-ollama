@@ -3,6 +3,7 @@ package org.forest.chatollama.controller;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import org.forest.chatollama.dto.ChatMessageRequest;
 import org.forest.chatollama.dto.CustomChatResponse;
 import org.forest.chatollama.dto.Result;
@@ -45,6 +46,12 @@ public class ChatMessageController {
     public Result<List<ChatMessage>> selectBySessionId(@NotBlank String sessionId) {
         var chatMessages = chatMessageService.selectBySessionId(sessionId);
         return Result.succ(chatMessages);
+    }
+
+    @GetMapping(value = "/selectById")
+    public Result<ChatMessage> selectById(@NotNull Long id) {
+        var chatMessage = chatMessageService.selectById(id);
+        return Result.succ(chatMessage);
     }
 
     /**

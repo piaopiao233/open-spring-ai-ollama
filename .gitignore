@@ -38,3 +38,4 @@ AGENTS.md
 CLAUDE.md
 .claude
 logs
+application-local.yml

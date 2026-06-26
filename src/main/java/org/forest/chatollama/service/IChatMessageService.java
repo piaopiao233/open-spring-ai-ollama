@@ -45,7 +45,7 @@ public interface IChatMessageService extends IService<ChatMessage> {
 
     void deleteBySessionId(String sessionId);
 
-
+    ChatMessage selectById(Long id);
 
 
 }

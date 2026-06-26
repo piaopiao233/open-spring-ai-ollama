@@ -101,10 +101,14 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
         StringBuffer fullContent = new StringBuffer();
         AtomicReference<Integer> tokenCount = new AtomicReference<>();
         LoggingToolCallAdvisor toolCallAdvisor = new LoggingToolCallAdvisor(toolCallingManager, sessionId, recordId, this);
+        // 根据是否启用网络搜索决定使用的工具列表
+        Object[] tools = Boolean.TRUE.equals(request.getEnableWebSearch()) 
+                ? new Object[]{toolCalling, webSearchToolCalling}
+                : new Object[]{toolCalling};
         return chatClient.prompt()
                 .messages(messages)
                 .advisors(toolCallAdvisor)
-                .tools(toolCalling,webSearchToolCalling)
+                .tools(tools)
                 .options(chatOptions)
                 .stream()
                 .chatResponse()
@@ -169,12 +173,12 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
             queryWrapper.orderByDesc(ChatMessage::getId);
         }
         List<ChatMessage> chatMessages = list(queryWrapper);
-        // 格式化工具信息，清除网络搜索结果的content
+        // 格式化工具信息，清除工具消息的content
         for (ChatMessage chatMessage : chatMessages) {
             MetaData metaJson = chatMessage.getMetaJson();
             if (metaJson != null && metaJson.getToolCalls() != null) {
                 for (MetaData.ToolCallMeta toolCall : metaJson.getToolCalls()) {
-                    formatToolCalls(toolCall);
+                    toolCall.setResult(null);
                 }
             }
         }
@@ -278,7 +282,14 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
         if (ObjectUtil.isNotNull(tokens)) {
             tokenCount.set(tokens);
         }
-        return new CustomChatResponse(delta, isThinking, sessionId, recordId, tokens);
+        // 提取工具调用信息
+        List<CustomChatResponse.ToolCallInfo> toolCallInfos = null;
+        if (chatResponse.hasToolCalls() && CollUtil.isNotEmpty(output.getToolCalls())) {
+            toolCallInfos = output.getToolCalls().stream()
+                    .map(toolCall -> CustomChatResponse.ToolCallInfo.of(toolCall.name(), toolCall.arguments()))
+                    .toList();
+        }
+        return new CustomChatResponse(delta, isThinking, sessionId, recordId, tokens, toolCallInfos);
     }
 
     /**
@@ -463,6 +474,17 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
     }
 
     /**
+     * 根据ID查询消息。
+     *
+     * @param id 消息ID
+     * @return 消息
+     */
+    @Override
+    public ChatMessage selectById(Long id) {
+        return getById(id);
+    }
+
+    /**
      * 构建单张图片媒体对象。
      *
      * @param imageMeta 图片元数据
@@ -475,17 +497,6 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
         return new Media(mimeType, resource);
     }
 
-    /**
-     * 格式化工具调用信息
-     * 如果是网络搜索工具，将搜索结果中的content设置为null，减少返回给前端的数据量
-     *
-     * @param toolCallMeta 工具调用元数据
-     */
-    private void formatToolCalls(MetaData.ToolCallMeta toolCallMeta) {
-        if (WEB_SEARCH_TOOL_NAME.equals(toolCallMeta.getName())) {
-            toolCallMeta.setResult(formatWebSearchResult(toolCallMeta.getResult()));
-        }
-    }
 
     /**
      * 格式化网络搜索结果

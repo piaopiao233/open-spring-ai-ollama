@@ -29,4 +29,10 @@ public class ChatMessageRequest {
     @Valid
     @Schema(description = "当前轮附带的图片列表")
     private List<ChatImageItem> imageList;
+
+    /**
+     * 是否启用网络搜索，默认不启用
+     */
+    @Schema(description = "是否启用网络搜索，true-启用，false-不启用，默认不启用")
+    private Boolean enableWebSearch = false;
 }
