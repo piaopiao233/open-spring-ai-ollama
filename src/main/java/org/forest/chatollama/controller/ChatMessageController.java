@@ -8,6 +8,7 @@ import org.forest.chatollama.dto.ChatMessageRequest;
 import org.forest.chatollama.dto.CustomChatResponse;
 import org.forest.chatollama.dto.Result;
 import org.forest.chatollama.model.ChatMessage;
+import org.forest.chatollama.model.MetaData;
 import org.forest.chatollama.service.IChatMessageService;
 import org.forest.chatollama.util.SpringAiRagUtils;
 import org.springframework.ai.document.Document;
@@ -52,6 +53,18 @@ public class ChatMessageController {
     public Result<ChatMessage> selectById(@NotNull Long id) {
         var chatMessage = chatMessageService.selectById(id);
         return Result.succ(chatMessage);
+    }
+
+    /**
+     * 根据对话ID查询本轮工具调用详情。
+     *
+     * @param recordId 对话ID
+     * @return 工具调用详情
+     */
+    @GetMapping(value = "/selectToolCallsByRecordId")
+    public Result<List<MetaData.ToolCallMeta>> selectToolCallsByRecordId(@NotBlank String recordId) {
+        var toolCalls = chatMessageService.selectToolCallsByRecordId(recordId);
+        return Result.succ(toolCalls);
     }
 
     /**

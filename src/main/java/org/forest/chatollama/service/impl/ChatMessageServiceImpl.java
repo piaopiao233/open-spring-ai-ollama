@@ -47,7 +47,9 @@ import org.springframework.util.MimeTypeUtils;
 import reactor.core.publisher.Flux;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -482,6 +484,63 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
     @Override
     public ChatMessage selectById(Long id) {
         return getById(id);
+    }
+
+    /**
+     * 根据对话ID查询并合并本轮工具调用信息。
+     *
+     * @param recordId 对话ID
+     * @return 工具调用信息列表
+     */
+    @Override
+    public List<MetaData.ToolCallMeta> selectToolCallsByRecordId(String recordId) {
+        LambdaQueryWrapper<ChatMessage> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(ChatMessage::getRecordId, recordId)
+                .orderByAsc(ChatMessage::getId);
+        List<ChatMessage> chatMessages = list(wrapper);
+        Map<String, MetaData.ToolCallMeta> toolCallMap = new LinkedHashMap<>();
+
+        for (ChatMessage chatMessage : chatMessages) {
+            MetaData metaJson = chatMessage.getMetaJson();
+            if (metaJson == null || CollUtil.isEmpty(metaJson.getToolCalls())) {
+                continue;
+            }
+            for (int i = 0; i < metaJson.getToolCalls().size(); i++) {
+                MetaData.ToolCallMeta toolCall = metaJson.getToolCalls().get(i);
+                if (ObjectUtil.isNull(toolCall)) {
+                    continue;
+                }
+                // 工具调用和工具结果分别是两条消息，这里按工具调用ID合并成一条给前端展示。
+                String toolKey = StrUtil.blankToDefault(toolCall.getId(), StrUtil.format("{}-{}", toolCall.getName(), i));
+                MetaData.ToolCallMeta mergedToolCall = toolCallMap.computeIfAbsent(toolKey, key -> new MetaData.ToolCallMeta());
+                mergeToolCallMeta(mergedToolCall, toolCall);
+            }
+        }
+        return new ArrayList<>(toolCallMap.values());
+    }
+
+    /**
+     * 合并工具调用元数据。
+     *
+     * @param target 合并后的工具调用
+     * @param source 当前消息里的工具调用
+     */
+    private void mergeToolCallMeta(MetaData.ToolCallMeta target, MetaData.ToolCallMeta source) {
+        if (StrUtil.isNotBlank(source.getId())) {
+            target.setId(source.getId());
+        }
+        if (StrUtil.isNotBlank(source.getType())) {
+            target.setType(source.getType());
+        }
+        if (StrUtil.isNotBlank(source.getName())) {
+            target.setName(source.getName());
+        }
+        if (StrUtil.isNotBlank(source.getArguments())) {
+            target.setArguments(source.getArguments());
+        }
+        if (StrUtil.isNotBlank(source.getResult())) {
+            target.setResult(source.getResult());
+        }
     }
 
     /**

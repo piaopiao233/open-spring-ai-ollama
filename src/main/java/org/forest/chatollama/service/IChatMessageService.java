@@ -4,6 +4,7 @@ import org.forest.chatollama.dto.ChatMessageRequest;
 import org.forest.chatollama.model.ChatMessage;
 import com.baomidou.mybatisplus.extension.service.IService;
 import org.forest.chatollama.dto.CustomChatResponse;
+import org.forest.chatollama.model.MetaData;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.document.Document;
@@ -46,6 +47,14 @@ public interface IChatMessageService extends IService<ChatMessage> {
     void deleteBySessionId(String sessionId);
 
     ChatMessage selectById(Long id);
+
+    /**
+     * 根据对话ID查询并合并本轮工具调用信息。
+     *
+     * @param recordId 对话ID
+     * @return 工具调用信息列表
+     */
+    List<MetaData.ToolCallMeta> selectToolCallsByRecordId(String recordId);
 
 
 }
