@@ -38,6 +38,45 @@ public class ChatMessageController {
         return chatMessageService.generateStream(request);
     }
 
+    /**
+     * 重连当前会话未完成的流式消息。
+     *
+     * @param sessionId 会话ID
+     * @return 流式响应
+     */
+    @PostMapping(value = "/message/reconnect", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @Operation(summary = "重连流式会话消息")
+    public Flux<CustomChatResponse> reconnectStream(@RequestParam @NotBlank String sessionId) {
+        return chatMessageService.reconnectStream(sessionId);
+    }
+
+    /**
+     * 停止当前对话流式生成。
+     *
+     * @param recordId 对话ID
+     * @return 操作结果
+     */
+    @PostMapping(value = "/message/stop")
+    @Operation(summary = "停止流式会话消息")
+    public Result<Void> stopStream(@RequestParam @NotBlank String recordId) {
+        chatMessageService.stopStream(recordId);
+        return Result.succ();
+    }
+
+    /**
+     *
+     * 查询sessionId 有没有正在进行的聊天
+     *
+     * @param sessionId
+     * @return
+     */
+    @GetMapping(value = "/isSessionIdHasRunningChat")
+    public Result<Boolean> isSessionIdHasRunningChat(@NotBlank String sessionId) {
+        return Result.succ(chatMessageService.isSessionIdHasRunningChat(sessionId));
+    }
+
+
+
     @GetMapping(value = "/simpleMessage", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<CustomChatResponse> simpleGenerateStream(@NotBlank String message) {
         return chatMessageService.simpleGenerateStreamCustom(message);

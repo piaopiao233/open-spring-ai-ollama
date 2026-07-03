@@ -24,6 +24,10 @@ public interface IChatMessageService extends IService<ChatMessage> {
 
     Flux<CustomChatResponse> generateStream(ChatMessageRequest request);
 
+    Flux<CustomChatResponse> reconnectStream(String sessionId);
+
+    void stopStream(String recordId);
+
     Flux<CustomChatResponse> simpleGenerateStreamCustom(String message);
 
     default List<ChatMessage> selectBySessionId(String sessionId) {
@@ -56,5 +60,10 @@ public interface IChatMessageService extends IService<ChatMessage> {
      */
     List<MetaData.ToolCallMeta> selectToolCallsByRecordId(String recordId);
 
+
+    /**
+     * 查询sessionId 有没有正在进行的聊天
+     */
+    boolean isSessionIdHasRunningChat(String sessionId);
 
 }

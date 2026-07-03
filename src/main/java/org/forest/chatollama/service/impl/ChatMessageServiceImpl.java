@@ -24,6 +24,8 @@ import org.forest.chatollama.model.MetaData;
 import org.forest.chatollama.service.IChatMessageService;
 import org.forest.chatollama.service.IChatSessionService;
 import org.forest.chatollama.service.ToolCalling;
+import org.forest.chatollama.service.ai.ChatStreamTask;
+import org.forest.chatollama.service.ai.ChatStreamTaskManager;
 import org.forest.chatollama.service.ai.LoggingToolCallAdvisor;
 import org.forest.chatollama.service.ai.WebSearchToolCalling;
 import org.forest.chatollama.util.SpringAiRagUtils;
@@ -44,7 +46,9 @@ import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.util.MimeType;
 import org.springframework.util.MimeTypeUtils;
+import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
+import reactor.core.scheduler.Schedulers;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -75,6 +79,7 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
     private final ToolCalling toolCalling;
     private final WebSearchToolCalling webSearchToolCalling;
     private final ToolCallingManager toolCallingManager;
+    private final ChatStreamTaskManager chatStreamTaskManager;
     private IChatSessionService chatSessionService;
 
     @Autowired
@@ -94,30 +99,76 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
         String recordId = IdUtil.fastSimpleUUID();
         String userMessage = request.getMessage();
         String sessionId = prepareSession(request.getSessionId(), userMessage);
+        Assert.isTrue(ObjectUtil.isNull(chatStreamTaskManager.getBySessionId(sessionId)), "当前会话正在生成中，请稍后再试");
         // 先把当前轮用户消息落库，图片地址会一并写入 meta_json。
         saveUserMessage(sessionId, recordId, request);
         // 再把完整上下文回放给模型，确保多轮场景下历史图片也能被带上。
         List<Message> messages = buildMessageList(selectBySessionId(sessionId, true));
         ChatClient chatClient = ChatClient.builder(chatModel).build();
         ChatOptions chatOptions = buildChatOptions();
-        StringBuffer fullContent = new StringBuffer();
-        AtomicReference<Integer> tokenCount = new AtomicReference<>();
+        ChatStreamTask streamTask = chatStreamTaskManager.createTask(sessionId, recordId);
         LoggingToolCallAdvisor toolCallAdvisor = new LoggingToolCallAdvisor(toolCallingManager, sessionId, recordId, this);
         // 根据是否启用网络搜索决定使用的工具列表
         Object[] tools = Boolean.TRUE.equals(request.getEnableWebSearch()) 
                 ? new Object[]{toolCalling, webSearchToolCalling}
                 : new Object[]{toolCalling};
-        return chatClient.prompt()
+        // 先推一个空 chunk，保证新会话前端能马上拿到 sessionId 和 recordId。
+        streamTask.emit(new CustomChatResponse("", false, sessionId, recordId, null));
+        Flux<CustomChatResponse> modelStream = chatClient.prompt()
                 .messages(messages)
                 .advisors(toolCallAdvisor)
                 .tools(tools)
                 .options(chatOptions)
                 .stream()
                 .chatResponse()
-                .map(chatResponse -> buildStreamResponse(chatResponse, fullContent, tokenCount, sessionId, recordId))
-                .doOnComplete(() -> finishAssistantMessage(sessionId, recordId, fullContent, tokenCount.get()))
-                .doOnCancel(() -> finishAssistantMessage(sessionId, recordId, fullContent, tokenCount.get()))
-                .doOnError(err -> log.error("流异常: ", err));
+                .map(chatResponse -> buildStreamResponse(
+                        chatResponse,
+                        streamTask.getFullContent(),
+                        streamTask.getTokenCount(),
+                        sessionId,
+                        recordId
+                ));
+        Disposable disposable = modelStream
+                .subscribeOn(Schedulers.boundedElastic())
+                .subscribe(
+                        streamTask::emit,
+                        err -> finishStreamTaskWithError(streamTask, err),
+                        () -> finishStreamTask(streamTask)
+                );
+        streamTask.setDisposable(disposable);
+        return streamTask.asFlux();
+    }
+
+    /**
+     * 重连会话中正在生成的流。
+     *
+     * @param sessionId 会话ID
+     * @return 流式响应
+     */
+    @Override
+    public Flux<CustomChatResponse> reconnectStream(String sessionId) {
+        ChatStreamTask streamTask = chatStreamTaskManager.getBySessionId(sessionId);
+        if (ObjectUtil.isNull(streamTask)) {
+            return Flux.empty();
+        }
+        log.info("重新连接会话{}，对话{}的流式生成", sessionId, streamTask.getRecordId());
+        return streamTask.asFlux();
+    }
+
+    /**
+     * 停止指定对话的流式生成。
+     *
+     * @param recordId 对话ID
+     */
+    @Override
+    public void stopStream(String recordId) {
+        ChatStreamTask streamTask = chatStreamTaskManager.getByRecordId(recordId);
+        if (ObjectUtil.isNull(streamTask)) {
+            return;
+        }
+        log.info("停止会话{}，对话{}的流式生成", streamTask.getSessionId(), recordId);
+        streamTask.cancelModelStream();
+        finishStreamTask(streamTask);
     }
 
     /**
@@ -331,6 +382,45 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
     }
 
     /**
+     * 完成流式任务并保存最终助手消息。
+     *
+     * @param streamTask 流式任务
+     */
+    private void finishStreamTask(ChatStreamTask streamTask) {
+        log.info("流式任务完成: 会话id：{} 对话id：{}" , streamTask.getSessionId(), streamTask.getRecordId());
+        if (streamTask.markSaved()) {
+            finishAssistantMessage(
+                    streamTask.getSessionId(),
+                    streamTask.getRecordId(),
+                    streamTask.getFullContent(),
+                    streamTask.getTokenCount().get()
+            );
+        }
+        streamTask.complete();
+        chatStreamTaskManager.removeTask(streamTask);
+    }
+
+    /**
+     * 异常结束流式任务。
+     *
+     * @param streamTask 流式任务
+     * @param err 异常
+     */
+    private void finishStreamTaskWithError(ChatStreamTask streamTask, Throwable err) {
+        log.error("流异常: ", err);
+        if (streamTask.markSaved()) {
+            finishAssistantMessage(
+                    streamTask.getSessionId(),
+                    streamTask.getRecordId(),
+                    streamTask.getFullContent(),
+                    streamTask.getTokenCount().get()
+            );
+        }
+        streamTask.error(err);
+        chatStreamTaskManager.removeTask(streamTask);
+    }
+
+    /**
      * 构建用户消息。
      *
      * @param chatMessage 用户消息实体
@@ -517,6 +607,11 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
             }
         }
         return new ArrayList<>(toolCallMap.values());
+    }
+
+    @Override
+    public boolean isSessionIdHasRunningChat(String sessionId) {
+       return chatStreamTaskManager.getBySessionId(sessionId) != null;
     }
 
     /**
