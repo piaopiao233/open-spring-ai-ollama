@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
-import javax.validation.ConstraintViolationException;
+import jakarta.validation.ConstraintViolationException;
 
 @Slf4j
 @RestControllerAdvice
@@ -42,8 +42,7 @@ public class GlobalExceptionHandler {
     //用户get输入抛出异常
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     @ExceptionHandler(value = {IllegalStateException.class, ConstraintViolationException.class,
-            MethodArgumentTypeMismatchException.class, HttpMessageNotReadableException.class,
-            jakarta.validation.ConstraintViolationException.class})
+            MethodArgumentTypeMismatchException.class, HttpMessageNotReadableException.class})
     public Result<String> handler(Exception e) {
         return Result.fail("参数有误："+ e.getMessage());
     }

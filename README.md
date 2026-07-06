@@ -1,7 +1,7 @@
 # chat-ollama
 
 一个干净、简单、偏实战的 AI 聊天后端项目。  
-基于 `Spring Boot 3` + `Spring AI` + `Ollama` + `MariaDB` + `Qdrant` 构建，支持流式聊天、多轮对话落库、工具调用、RAG 检索增强以及查询变体召回。
+基于 `Spring Boot 4` + `Spring AI 2.0` + `Ollama` + `MariaDB` + `Qdrant` 构建，支持流式聊天、多轮对话落库、工具调用、RAG 检索增强以及查询变体召回。
 
 ---
 <h2>前端项目：<a href="https://gitee.com/jusenlin/chat-web">chat-web</a></h2>
@@ -57,6 +57,8 @@
 - 业务接口类工具
 - **网络搜索工具（Tavily）**
 
+工具调用流程基于 Spring AI 2.0 的 `ToolCallingAdvisor`，项目通过 `LoggingToolCallingManager` 装饰默认 `ToolCallingManager`，在工具执行前后把工具调用请求和工具执行结果写入 `chat_message`。本轮会话的 `sessionId`、`recordId` 会通过 `ToolCallingChatOptions.toolContext` 传递，便于后续扩展用户、租户、权限隔离等业务上下文。
+
 这类能力特别适合后续做“AI 调系统”“AI 调接口”“AI 查业务数据”场景。
 
 #### 网络搜索工具
@@ -86,8 +88,8 @@ tavily:
 ## 3. 技术栈
 
 - `Java 21`
-- `Spring Boot 3.5.x`
-- `Spring AI 1.1.x`
+- `Spring Boot 4.1.x`
+- `Spring AI 2.0.x`
 - `Ollama`
 - `MariaDB`
 - `MyBatis-Plus`
@@ -122,7 +124,7 @@ tavily:
 
 当前配置示例中可见：
 
-- 聊天模型：`qwen3.5:cloud`
+- 聊天模型：`minimax-m2.5:cloud`
 - 向量模型：`nomic-embed-text`
 
 请根据你的实际环境替换为可用模型名称。
@@ -179,11 +181,9 @@ spring:
     ollama:
       base-url: http://localhost:11434
       chat:
-        options:
-          model: 你的聊天模型
+        model: 你的聊天模型
       embedding:
-        options:
-          model: 你的向量模型
+        model: 你的向量模型
 ```
 
 ### Qdrant 配置

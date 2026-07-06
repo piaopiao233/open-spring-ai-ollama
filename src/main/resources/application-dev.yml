@@ -24,11 +24,9 @@ spring:
     ollama:
       base-url: http://localhost:11434
       chat:
-        options:
-          model: glm-4.7:cloud
+        model: minimax-m2.5:cloud
       embedding:
-        options:
-          model: nomic-embed-text
+        model: nomic-embed-text
 
 tavily:
   api-key: https://www.tavily.com/ 官网申请你的api-key

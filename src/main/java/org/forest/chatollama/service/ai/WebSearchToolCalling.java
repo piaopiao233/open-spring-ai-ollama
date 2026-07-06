@@ -1,7 +1,7 @@
 package org.forest.chatollama.service.ai;
 
 import lombok.RequiredArgsConstructor;
-import lombok.extern.log4j.Log4j2;
+import lombok.extern.slf4j.Slf4j;
 import org.forest.chatollama.util.websearch.WebSearchResult;
 import org.forest.chatollama.util.websearch.WebSearchTool;
 import org.springframework.ai.tool.annotation.Tool;
@@ -16,7 +16,7 @@ import java.util.List;
  */
 @Service
 @RequiredArgsConstructor
-@Log4j2
+@Slf4j
 public class WebSearchToolCalling {
 
     private final WebSearchTool webSearchTool;

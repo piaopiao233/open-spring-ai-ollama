@@ -36,6 +36,11 @@ public class ChatStreamTask {
     private final StringBuffer fullContent = new StringBuffer();
 
     /**
+     * 当前轮AI已生成的思考内容。
+     */
+    private final StringBuffer thinkingContent = new StringBuffer();
+
+    /**
      * 当前轮AI回复的token使用数。
      */
     private final AtomicReference<Integer> tokenCount = new AtomicReference<>();

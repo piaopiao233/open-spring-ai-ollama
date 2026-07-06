@@ -26,17 +26,17 @@ import org.forest.chatollama.service.IChatSessionService;
 import org.forest.chatollama.service.ToolCalling;
 import org.forest.chatollama.service.ai.ChatStreamTask;
 import org.forest.chatollama.service.ai.ChatStreamTaskManager;
-import org.forest.chatollama.service.ai.LoggingToolCallAdvisor;
 import org.forest.chatollama.service.ai.WebSearchToolCalling;
+import org.springframework.ai.chat.client.advisor.ToolCallingAdvisor;
 import org.forest.chatollama.util.SpringAiRagUtils;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.*;
 import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.content.Media;
 import org.springframework.ai.document.Document;
-import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.ai.ollama.OllamaChatModel;
 import org.springframework.ai.ollama.api.OllamaChatOptions;
 import org.springframework.context.annotation.Lazy;
@@ -78,7 +78,7 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
     private final SpringAiRagUtils springAiRagUtils;
     private final ToolCalling toolCalling;
     private final WebSearchToolCalling webSearchToolCalling;
-    private final ToolCallingManager toolCallingManager;
+    private final ToolCallingAdvisor toolCallingAdvisor;
     private final ChatStreamTaskManager chatStreamTaskManager;
     private IChatSessionService chatSessionService;
 
@@ -105,9 +105,8 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
         // 再把完整上下文回放给模型，确保多轮场景下历史图片也能被带上。
         List<Message> messages = buildMessageList(selectBySessionId(sessionId, true));
         ChatClient chatClient = ChatClient.builder(chatModel).build();
-        ChatOptions chatOptions = buildChatOptions();
+        ChatOptions.Builder<?> chatOptionsBuilder = buildChatOptions(sessionId, recordId);
         ChatStreamTask streamTask = chatStreamTaskManager.createTask(sessionId, recordId);
-        LoggingToolCallAdvisor toolCallAdvisor = new LoggingToolCallAdvisor(toolCallingManager, sessionId, recordId, this);
         // 根据是否启用网络搜索决定使用的工具列表
         Object[] tools = Boolean.TRUE.equals(request.getEnableWebSearch()) 
                 ? new Object[]{toolCalling, webSearchToolCalling}
@@ -116,14 +115,15 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
         streamTask.emit(new CustomChatResponse("", false, sessionId, recordId, null));
         Flux<CustomChatResponse> modelStream = chatClient.prompt()
                 .messages(messages)
-                .advisors(toolCallAdvisor)
+                .advisors(toolCallingAdvisor)
                 .tools(tools)
-                .options(chatOptions)
+                .options(chatOptionsBuilder)
                 .stream()
                 .chatResponse()
                 .map(chatResponse -> buildStreamResponse(
                         chatResponse,
                         streamTask.getFullContent(),
+                        streamTask.getThinkingContent(),
                         streamTask.getTokenCount(),
                         sessionId,
                         recordId
@@ -303,12 +303,14 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
     /**
      * 构建对话参数。
      *
+     * @param sessionId 会话id
+     * @param recordId 记录id
      * @return 对话参数
      */
-    private ChatOptions buildChatOptions() {
+    private ChatOptions.Builder<?> buildChatOptions(String sessionId, String recordId) {
         return OllamaChatOptions.builder()
-                .disableThinking()
-                .build();
+                .toolContext(Map.of("sessionId", sessionId, "recordId", recordId))
+                .enableThinking();
     }
 
     /**
@@ -323,26 +325,29 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
      */
     private CustomChatResponse buildStreamResponse(ChatResponse chatResponse,
                                                    StringBuffer fullContent,
+                                                   StringBuffer thinkingContent,
                                                    AtomicReference<Integer> tokenCount,
                                                    String sessionId,
                                                    String recordId) {
-        AssistantMessage output = chatResponse.getResult().getOutput();
+        Generation result = chatResponse.getResult();
+        if (result == null){
+            return new CustomChatResponse("", false, sessionId, recordId, null);
+        }
+        AssistantMessage output = result.getOutput();
         String delta = StrUtil.nullToDefault(output.getText(), "");
-        fullContent.append(delta);
         String thinkingPart = chatResponse.getResult().getMetadata().get("thinking");
         boolean isThinking = StrUtil.isNotBlank(thinkingPart);
+        if (isThinking) {
+            thinkingContent.append(thinkingPart);
+        }
+        if (StrUtil.isNotBlank(delta)) {
+            fullContent.append(delta);
+        }
         Integer tokens = extractTotalTokens(chatResponse);
         if (ObjectUtil.isNotNull(tokens)) {
             tokenCount.set(tokens);
         }
-        // 提取工具调用信息
-        List<CustomChatResponse.ToolCallInfo> toolCallInfos = null;
-        if (chatResponse.hasToolCalls() && CollUtil.isNotEmpty(output.getToolCalls())) {
-            toolCallInfos = output.getToolCalls().stream()
-                    .map(toolCall -> CustomChatResponse.ToolCallInfo.of(toolCall.name(), toolCall.arguments()))
-                    .toList();
-        }
-        return new CustomChatResponse(delta, isThinking, sessionId, recordId, tokens, toolCallInfos);
+        return new CustomChatResponse(isThinking ? thinkingPart : delta, isThinking, sessionId, recordId, tokens, null);
     }
 
     /**
@@ -352,9 +357,6 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
      * @return token 数
      */
     private Integer extractTotalTokens(ChatResponse chatResponse) {
-        if (chatResponse.getMetadata() == null || chatResponse.getMetadata().getUsage() == null) {
-            return null;
-        }
         return chatResponse.getMetadata().getUsage().getTotalTokens();
     }
 
@@ -364,21 +366,42 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
      * @param sessionId 会话id
      * @param recordId 记录id
      * @param fullContent 完整响应
+     * @param thinkingContent 思考内容
      * @param tokenCount token 使用数
      */
-    private void finishAssistantMessage(String sessionId, String recordId, StringBuffer fullContent, Integer tokenCount) {
-        if (fullContent.isEmpty()){
+    private void finishAssistantMessage(String sessionId,
+                                        String recordId,
+                                        StringBuffer fullContent,
+                                        StringBuffer thinkingContent,
+                                        Integer tokenCount) {
+        if (fullContent.isEmpty() && thinkingContent.isEmpty()){
             return;
         }
         ChatMessage assistantChat = new ChatMessage(
                 Const.ChatMessageType.ASSISTANT,
                 sessionId,
                 recordId,
-                fullContent.toString()
+                fullContent.toString(),
+                buildAssistantMessageMetaData(thinkingContent)
         );
         assistantChat.setTokenCount(tokenCount);
         save(assistantChat);
         chatSessionService.touchSession(sessionId);
+    }
+
+    /**
+     * 构建助手消息元数据。
+     *
+     * @param thinkingContent 思考内容
+     * @return 助手消息元数据
+     */
+    private MetaData buildAssistantMessageMetaData(StringBuffer thinkingContent) {
+        if (thinkingContent.isEmpty()) {
+            return null;
+        }
+        MetaData metaData = new MetaData();
+        metaData.setThinking(thinkingContent.toString());
+        return metaData;
     }
 
     /**
@@ -393,6 +416,7 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
                     streamTask.getSessionId(),
                     streamTask.getRecordId(),
                     streamTask.getFullContent(),
+                    streamTask.getThinkingContent(),
                     streamTask.getTokenCount().get()
             );
         }
@@ -413,6 +437,7 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
                     streamTask.getSessionId(),
                     streamTask.getRecordId(),
                     streamTask.getFullContent(),
+                    streamTask.getThinkingContent(),
                     streamTask.getTokenCount().get()
             );
         }
@@ -649,27 +674,6 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
         Resource resource = new ByteArrayResource(bytes);
         MimeType mimeType =  MimeTypeUtils.parseMimeType(imageMeta.getMimeType());
         return new Media(mimeType, resource);
-    }
-
-
-    /**
-     * 格式化网络搜索结果
-     * 将搜索结果中的content字段设置为null
-     *
-     * @param resultJson 搜索结果JSON字符串
-     * @return 格式化后的JSON字符串
-     */
-    private String formatWebSearchResult(String resultJson) {
-        try {
-            JSONArray results = JSONUtil.parseArray(resultJson);
-            for (int i = 0; i < results.size(); i++) {
-                JSONObject item = results.getJSONObject(i);
-                item.set("content", null);
-            }
-            return results.toString();
-        } catch (Exception e) {
-            return resultJson;
-        }
     }
 
 }

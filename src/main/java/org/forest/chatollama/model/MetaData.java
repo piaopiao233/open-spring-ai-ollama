@@ -25,6 +25,11 @@ public class MetaData {
     private List<ImageMeta> images;
 
     /**
+     * 本条助手消息中的思考内容。
+     */
+    private String thinking;
+
+    /**
      * 仅设置工具调用元数据。
      *
      * @param toolCalls 工具调用列表

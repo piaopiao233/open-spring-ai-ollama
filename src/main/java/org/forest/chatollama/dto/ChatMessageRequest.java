@@ -26,9 +26,8 @@ public class ChatMessageRequest {
     /**
      * 当前轮图片列表
      */
-    @Valid
     @Schema(description = "当前轮附带的图片列表")
-    private List<ChatImageItem> imageList;
+    private List<@Valid ChatImageItem> imageList;
 
     /**
      * 是否启用网络搜索，默认不启用

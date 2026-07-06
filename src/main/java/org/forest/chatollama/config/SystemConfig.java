@@ -4,18 +4,19 @@ import com.baomidou.mybatisplus.annotation.DbType;
 import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.inner.BlockAttackInnerInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.inner.PaginationInnerInterceptor;
-import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
-import com.fasterxml.jackson.datatype.jsr310.deser.LocalDateDeserializer;
-import com.fasterxml.jackson.datatype.jsr310.deser.LocalDateTimeDeserializer;
-import com.fasterxml.jackson.datatype.jsr310.deser.LocalTimeDeserializer;
-import com.fasterxml.jackson.datatype.jsr310.ser.LocalDateSerializer;
-import com.fasterxml.jackson.datatype.jsr310.ser.LocalDateTimeSerializer;
-import com.fasterxml.jackson.datatype.jsr310.ser.LocalTimeSerializer;
-import org.springframework.boot.autoconfigure.jackson.Jackson2ObjectMapperBuilderCustomizer;
+import org.springframework.boot.jackson.autoconfigure.JsonMapperBuilderCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+import tools.jackson.databind.module.SimpleModule;
+import tools.jackson.databind.ser.std.ToStringSerializer;
+import tools.jackson.databind.ext.javatime.deser.LocalDateDeserializer;
+import tools.jackson.databind.ext.javatime.deser.LocalDateTimeDeserializer;
+import tools.jackson.databind.ext.javatime.deser.LocalTimeDeserializer;
+import tools.jackson.databind.ext.javatime.ser.LocalDateSerializer;
+import tools.jackson.databind.ext.javatime.ser.LocalDateTimeSerializer;
+import tools.jackson.databind.ext.javatime.ser.LocalTimeSerializer;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -35,28 +36,32 @@ public class SystemConfig implements WebMvcConfigurer {
     }
 
     @Bean
-    public Jackson2ObjectMapperBuilderCustomizer jackson2ObjectMapperBuilderCustomizer() {
+    public JsonMapperBuilderCustomizer jacksonCustomizer() {
         return builder -> {
+            SimpleModule module = new SimpleModule("DateTimeModule");
+
             // Long 类型序列化为 String
-            builder.serializerByType(Long.class, ToStringSerializer.instance);
+            module.addSerializer(Long.class, ToStringSerializer.instance);
 
             // LocalDate
-            builder.serializerByType(LocalDate.class,
+            module.addSerializer(LocalDate.class,
                     new LocalDateSerializer(DateTimeFormatter.ofPattern("yyyy-MM-dd")));
-            builder.deserializerByType(LocalDate.class,
+            module.addDeserializer(LocalDate.class,
                     new LocalDateDeserializer(DateTimeFormatter.ofPattern("yyyy-MM-dd")));
 
             // LocalDateTime
-            builder.serializerByType(LocalDateTime.class,
+            module.addSerializer(LocalDateTime.class,
                     new LocalDateTimeSerializer(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
-            builder.deserializerByType(LocalDateTime.class,
+            module.addDeserializer(LocalDateTime.class,
                     new LocalDateTimeDeserializer(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
 
             // LocalTime
-            builder.serializerByType(LocalTime.class,
+            module.addSerializer(LocalTime.class,
                     new LocalTimeSerializer(DateTimeFormatter.ofPattern("HH:mm:ss")));
-            builder.deserializerByType(LocalTime.class,
+            module.addDeserializer(LocalTime.class,
                     new LocalTimeDeserializer(DateTimeFormatter.ofPattern("HH:mm:ss")));
+
+            builder.addModule(module);
         };
     }
     @Override
