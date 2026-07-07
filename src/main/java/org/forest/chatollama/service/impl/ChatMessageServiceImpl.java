@@ -334,11 +334,11 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
         AssistantMessage output = result.getOutput();
         String delta = StrUtil.nullToDefault(output.getText(), "");
         String thinkingPart = chatResponse.getResult().getMetadata().get("thinking");
-        boolean isThinking = StrUtil.isNotBlank(thinkingPart);
+        boolean isThinking = StrUtil.isNotEmpty(thinkingPart);
         if (isThinking) {
             thinkingContent.append(thinkingPart);
         }
-        if (StrUtil.isNotBlank(delta)) {
+        if (StrUtil.isNotEmpty(delta)) {
             fullContent.append(delta);
         }
         Integer tokens = extractTotalTokens(chatResponse);
