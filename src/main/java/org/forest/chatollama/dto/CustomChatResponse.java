@@ -1,5 +1,6 @@
 package org.forest.chatollama.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -10,6 +11,7 @@ import java.util.List;
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class CustomChatResponse {
 
     /**
@@ -18,6 +20,7 @@ public class CustomChatResponse {
     @Data
     @AllArgsConstructor
     @NoArgsConstructor
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class ToolCallInfo {
         /**
          * 工具名称

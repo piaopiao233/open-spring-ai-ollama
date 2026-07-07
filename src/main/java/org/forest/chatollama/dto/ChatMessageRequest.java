@@ -34,4 +34,10 @@ public class ChatMessageRequest {
      */
     @Schema(description = "是否启用网络搜索，true-启用，false-不启用，默认不启用")
     private Boolean enableWebSearch = false;
+
+    /**
+     * 是否启用深度思考，默认不启用
+     */
+    @Schema(description = "是否启用深度思考，true-启用，false-不启用，默认不启用")
+    private Boolean enableThinking = false;
 }

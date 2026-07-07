@@ -105,7 +105,7 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
         // 再把完整上下文回放给模型，确保多轮场景下历史图片也能被带上。
         List<Message> messages = buildMessageList(selectBySessionId(sessionId, true));
         ChatClient chatClient = ChatClient.builder(chatModel).build();
-        ChatOptions.Builder<?> chatOptionsBuilder = buildChatOptions(sessionId, recordId);
+        ChatOptions.Builder<?> chatOptionsBuilder = buildChatOptions(sessionId, recordId, request.getEnableThinking());
         ChatStreamTask streamTask = chatStreamTaskManager.createTask(sessionId, recordId);
         // 根据是否启用网络搜索决定使用的工具列表
         Object[] tools = Boolean.TRUE.equals(request.getEnableWebSearch()) 
@@ -124,9 +124,7 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
                         chatResponse,
                         streamTask.getFullContent(),
                         streamTask.getThinkingContent(),
-                        streamTask.getTokenCount(),
-                        sessionId,
-                        recordId
+                        streamTask.getTokenCount()
                 ));
         Disposable disposable = modelStream
                 .subscribeOn(Schedulers.boundedElastic())
@@ -305,12 +303,16 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
      *
      * @param sessionId 会话id
      * @param recordId 记录id
+     * @param enableThinking 是否启用深度思考
      * @return 对话参数
      */
-    private ChatOptions.Builder<?> buildChatOptions(String sessionId, String recordId) {
-        return OllamaChatOptions.builder()
-                .toolContext(Map.of("sessionId", sessionId, "recordId", recordId))
-                .enableThinking();
+    private ChatOptions.Builder<?> buildChatOptions(String sessionId, String recordId, Boolean enableThinking) {
+        var builder = OllamaChatOptions.builder()
+                .toolContext(Map.of("sessionId", sessionId, "recordId", recordId));
+        if (Boolean.TRUE.equals(enableThinking)) {
+            return builder.enableThinking();
+        }
+        return builder.disableThinking();
     }
 
     /**
@@ -319,19 +321,15 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
      * @param chatResponse 模型响应
      * @param fullContent 完整响应缓冲区
      * @param tokenCount token 使用数
-     * @param sessionId 会话id
-     * @param recordId 记录id
      * @return 自定义流式响应
      */
     private CustomChatResponse buildStreamResponse(ChatResponse chatResponse,
                                                    StringBuffer fullContent,
                                                    StringBuffer thinkingContent,
-                                                   AtomicReference<Integer> tokenCount,
-                                                   String sessionId,
-                                                   String recordId) {
+                                                   AtomicReference<Integer> tokenCount) {
         Generation result = chatResponse.getResult();
         if (result == null){
-            return new CustomChatResponse("", false, sessionId, recordId, null);
+            return new CustomChatResponse("", false, null, null, null);
         }
         AssistantMessage output = result.getOutput();
         String delta = StrUtil.nullToDefault(output.getText(), "");
@@ -347,7 +345,7 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
         if (ObjectUtil.isNotNull(tokens)) {
             tokenCount.set(tokens);
         }
-        return new CustomChatResponse(isThinking ? thinkingPart : delta, isThinking, sessionId, recordId, tokens, null);
+        return new CustomChatResponse(isThinking ? thinkingPart : delta, isThinking, null, null, tokens, null);
     }
 
     /**
@@ -357,7 +355,8 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
      * @return token 数
      */
     private Integer extractTotalTokens(ChatResponse chatResponse) {
-        return chatResponse.getMetadata().getUsage().getTotalTokens();
+        Integer totalTokens = chatResponse.getMetadata().getUsage().getTotalTokens();
+        return totalTokens == 0 ? null : totalTokens;
     }
 
     /**
