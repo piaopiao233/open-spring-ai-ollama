@@ -39,3 +39,5 @@ CLAUDE.md
 .claude
 logs
 application-local.yml
+application-local*.yml
+.workbuddy
