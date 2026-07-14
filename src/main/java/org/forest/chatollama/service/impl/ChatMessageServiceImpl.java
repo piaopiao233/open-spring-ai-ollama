@@ -31,6 +31,7 @@ import org.springframework.ai.chat.client.advisor.ToolCallingAdvisor;
 import org.forest.chatollama.util.SpringAiRagUtils;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.*;
+import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.ChatOptions;
@@ -54,7 +55,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * <p>
@@ -120,16 +120,11 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
                 .options(chatOptionsBuilder)
                 .stream()
                 .chatResponse()
-                .map(chatResponse -> buildStreamResponse(
-                        chatResponse,
-                        streamTask.getFullContent(),
-                        streamTask.getThinkingContent(),
-                        streamTask.getTokenCount()
-                ));
+                .map(this::buildStreamResponse);
         Disposable disposable = modelStream
                 .subscribeOn(Schedulers.boundedElastic())
                 .subscribe(
-                        streamTask::emit,
+                        streamTask::emitModelResponse,
                         err -> finishStreamTaskWithError(streamTask, err),
                         () -> finishStreamTask(streamTask)
                 );
@@ -187,18 +182,17 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
                     String delta = chatResponse.getResult().getOutput().getText();
                     String thinkingPart = chatResponse.getResult().getMetadata().get("thinking");
                     boolean isThinking = StrUtil.isNotBlank(thinkingPart);
-                    Integer tokens = null;
-                    if (chatResponse.getMetadata() != null
-                            && chatResponse.getMetadata().getUsage() != null) {
-                        tokens = chatResponse.getMetadata().getUsage().getTotalTokens();
-                    }
+                    TokenUsage tokenUsage = extractTokenUsage(chatResponse);
                     fullContent.append(delta);
                     return new CustomChatResponse(
                             delta,
                             isThinking,
                             null,
                             null,
-                            tokens
+                            tokenUsage.totalTokens(),
+                            tokenUsage.promptTokens(),
+                            tokenUsage.completionTokens(),
+                            null
                     );
                 })
                 .doOnComplete(() -> System.out.println("完整响应: " + fullContent))
@@ -319,44 +313,62 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
      * 构建流式响应片段。
      *
      * @param chatResponse 模型响应
-     * @param fullContent 完整响应缓冲区
-     * @param tokenCount token 使用数
      * @return 自定义流式响应
      */
-    private CustomChatResponse buildStreamResponse(ChatResponse chatResponse,
-                                                   StringBuffer fullContent,
-                                                   StringBuffer thinkingContent,
-                                                   AtomicReference<Integer> tokenCount) {
+    private CustomChatResponse buildStreamResponse(ChatResponse chatResponse) {
         Generation result = chatResponse.getResult();
-        if (result == null){
+        if (ObjectUtil.isNull(result)) {
             return new CustomChatResponse("", false, null, null, null);
         }
         AssistantMessage output = result.getOutput();
-        String delta = StrUtil.nullToDefault(output.getText(), "");
-        String thinkingPart = chatResponse.getResult().getMetadata().get("thinking");
+        String delta = ObjectUtil.isNull(output) ? "" : StrUtil.nullToDefault(output.getText(), "");
+        String thinkingPart = ObjectUtil.isNull(result.getMetadata())
+                ? null
+                : StrUtil.toStringOrNull(result.getMetadata().get("thinking"));
         boolean isThinking = StrUtil.isNotEmpty(thinkingPart);
-        if (isThinking) {
-            thinkingContent.append(thinkingPart);
-        }
-        if (StrUtil.isNotEmpty(delta)) {
-            fullContent.append(delta);
-        }
-        Integer tokens = extractTotalTokens(chatResponse);
-        if (ObjectUtil.isNotNull(tokens)) {
-            tokenCount.set(tokens);
-        }
-        return new CustomChatResponse(isThinking ? thinkingPart : delta, isThinking, null, null, tokens, null);
+        TokenUsage tokenUsage = extractTokenUsage(chatResponse);
+        return new CustomChatResponse(
+                isThinking ? thinkingPart : delta,
+                isThinking,
+                null,
+                null,
+                tokenUsage.totalTokens(),
+                tokenUsage.promptTokens(),
+                tokenUsage.completionTokens(),
+                null
+        );
     }
 
     /**
-     * 提取总 token 数。
+     * 提取模型响应的token用量。
      *
      * @param chatResponse 模型响应
-     * @return token 数
+     * @return token用量
      */
-    private Integer extractTotalTokens(ChatResponse chatResponse) {
-        Integer totalTokens = chatResponse.getMetadata().getUsage().getTotalTokens();
-        return totalTokens == 0 ? null : totalTokens;
+    private TokenUsage extractTokenUsage(ChatResponse chatResponse) {
+        if (ObjectUtil.isNull(chatResponse.getMetadata())
+                || ObjectUtil.isNull(chatResponse.getMetadata().getUsage())) {
+            return new TokenUsage(null, null, null);
+        }
+        Usage usage = chatResponse.getMetadata().getUsage();
+        Integer totalTokens = usage.getTotalTokens();
+        Integer promptTokens = usage.getPromptTokens();
+        Integer completionTokens = usage.getCompletionTokens();
+        return new TokenUsage(
+                ObjectUtil.isNull(totalTokens) || totalTokens == 0 ? null : totalTokens,
+                ObjectUtil.isNull(promptTokens) || promptTokens == 0 ? null : promptTokens,
+                ObjectUtil.isNull(completionTokens) || completionTokens == 0 ? null : completionTokens
+        );
+    }
+
+    /**
+     * 模型token用量。
+     *
+     * @param totalTokens 总token数
+     * @param promptTokens 提示词token数
+     * @param completionTokens 生成内容token数
+     */
+    private record TokenUsage(Integer totalTokens, Integer promptTokens, Integer completionTokens) {
     }
 
     /**
@@ -367,12 +379,16 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
      * @param fullContent 完整响应
      * @param thinkingContent 思考内容
      * @param tokenCount token 使用数
+     * @param promptTokenCount 输入token使用数
+     * @param completionTokenCount 输出token使用数
      */
     private void finishAssistantMessage(String sessionId,
                                         String recordId,
-                                        StringBuffer fullContent,
-                                        StringBuffer thinkingContent,
-                                        Integer tokenCount) {
+                                        String fullContent,
+                                        String thinkingContent,
+                                        Integer tokenCount,
+                                        Integer promptTokenCount,
+                                        Integer completionTokenCount) {
         if (fullContent.isEmpty() && thinkingContent.isEmpty()){
             return;
         }
@@ -380,10 +396,12 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
                 Const.ChatMessageType.ASSISTANT,
                 sessionId,
                 recordId,
-                fullContent.toString(),
+                fullContent,
                 buildAssistantMessageMetaData(thinkingContent)
         );
         assistantChat.setTokenCount(tokenCount);
+        assistantChat.setPromptTokenCount(promptTokenCount);
+        assistantChat.setCompletionTokenCount(completionTokenCount);
         save(assistantChat);
         chatSessionService.touchSession(sessionId);
     }
@@ -394,12 +412,12 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
      * @param thinkingContent 思考内容
      * @return 助手消息元数据
      */
-    private MetaData buildAssistantMessageMetaData(StringBuffer thinkingContent) {
+    private MetaData buildAssistantMessageMetaData(String thinkingContent) {
         if (thinkingContent.isEmpty()) {
             return null;
         }
         MetaData metaData = new MetaData();
-        metaData.setThinking(thinkingContent.toString());
+        metaData.setThinking(thinkingContent);
         return metaData;
     }
 
@@ -411,12 +429,15 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
     private void finishStreamTask(ChatStreamTask streamTask) {
         log.info("流式任务完成: 会话id：{} 对话id：{}" , streamTask.getSessionId(), streamTask.getRecordId());
         if (streamTask.markSaved()) {
+            ChatStreamTask.ResponseSnapshot snapshot = streamTask.snapshot();
             finishAssistantMessage(
                     streamTask.getSessionId(),
                     streamTask.getRecordId(),
-                    streamTask.getFullContent(),
-                    streamTask.getThinkingContent(),
-                    streamTask.getTokenCount().get()
+                    snapshot.fullContent(),
+                    snapshot.thinkingContent(),
+                    snapshot.tokenCount(),
+                    snapshot.promptTokenCount(),
+                    snapshot.completionTokenCount()
             );
         }
         streamTask.complete();
@@ -432,12 +453,15 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
     private void finishStreamTaskWithError(ChatStreamTask streamTask, Throwable err) {
         log.error("流异常: ", err);
         if (streamTask.markSaved()) {
+            ChatStreamTask.ResponseSnapshot snapshot = streamTask.snapshot();
             finishAssistantMessage(
                     streamTask.getSessionId(),
                     streamTask.getRecordId(),
-                    streamTask.getFullContent(),
-                    streamTask.getThinkingContent(),
-                    streamTask.getTokenCount().get()
+                    snapshot.fullContent(),
+                    snapshot.thinkingContent(),
+                    snapshot.tokenCount(),
+                    snapshot.promptTokenCount(),
+                    snapshot.completionTokenCount()
             );
         }
         streamTask.error(err);

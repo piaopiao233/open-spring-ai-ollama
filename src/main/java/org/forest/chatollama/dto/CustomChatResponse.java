@@ -73,11 +73,40 @@ public class CustomChatResponse {
     private Integer tokenCount;
 
     /**
+     * 提示词token数量（仅最后一块有值，其他为null）
+     */
+    private Integer promptTokenCount;
+
+    /**
+     * 生成内容token数量（仅最后一块有值，其他为null）
+     */
+    private Integer completionTokenCount;
+
+    /**
      * 工具调用信息
      */
     private List<ToolCallInfo> toolCalls;
 
     public CustomChatResponse(String content, Boolean isThinking, String sessionId, String recordId, Integer tokenCount) {
-        this(content, isThinking, sessionId, recordId, tokenCount, null);
+        this(content, isThinking, sessionId, recordId, tokenCount, null, null, null);
+    }
+
+    /**
+     * 创建不包含细分token用量的流式响应。
+     *
+     * @param content 响应内容
+     * @param isThinking 是否为思考内容
+     * @param sessionId 会话ID
+     * @param recordId 对话ID
+     * @param tokenCount 总token数
+     * @param toolCalls 工具调用信息
+     */
+    public CustomChatResponse(String content,
+                              Boolean isThinking,
+                              String sessionId,
+                              String recordId,
+                              Integer tokenCount,
+                              List<ToolCallInfo> toolCalls) {
+        this(content, isThinking, sessionId, recordId, tokenCount, null, null, toolCalls);
     }
 }

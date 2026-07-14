@@ -12,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.ToolResponseMessage;
+import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.Prompt;
@@ -143,7 +144,43 @@ public class LoggingToolCallingManager implements ToolCallingManager {
                 assistantMessage.getText(),
                 new MetaData(toolCalls)
         );
+        TokenUsage tokenUsage = extractTokenUsage(chatResponse);
+        assistantToolCallMessage.setTokenCount(tokenUsage.totalTokens());
+        assistantToolCallMessage.setPromptTokenCount(tokenUsage.promptTokens());
+        assistantToolCallMessage.setCompletionTokenCount(tokenUsage.completionTokens());
         getChatMessageService().save(assistantToolCallMessage);
+    }
+
+    /**
+     * 提取工具调用对应模型响应的token用量。
+     *
+     * @param chatResponse 模型响应
+     * @return token用量
+     */
+    private TokenUsage extractTokenUsage(ChatResponse chatResponse) {
+        if (ObjectUtil.isNull(chatResponse) || ObjectUtil.isNull(chatResponse.getMetadata())
+                || ObjectUtil.isNull(chatResponse.getMetadata().getUsage())) {
+            return new TokenUsage(null, null, null);
+        }
+        Usage usage = chatResponse.getMetadata().getUsage();
+        Integer totalTokens = usage.getTotalTokens();
+        Integer promptTokens = usage.getPromptTokens();
+        Integer completionTokens = usage.getCompletionTokens();
+        return new TokenUsage(
+                normalizeTokenCount(totalTokens),
+                normalizeTokenCount(promptTokens),
+                normalizeTokenCount(completionTokens)
+        );
+    }
+
+    /**
+     * 将无效的零token值转换为空，避免把没有统计数据误存为有效用量。
+     *
+     * @param tokenCount token数量
+     * @return 有效token数量
+     */
+    private Integer normalizeTokenCount(Integer tokenCount) {
+        return ObjectUtil.isNull(tokenCount) || tokenCount == 0 ? null : tokenCount;
     }
 
     /**
@@ -305,5 +342,15 @@ public class LoggingToolCallingManager implements ToolCallingManager {
     }
 
     private record ToolLogContext(String sessionId, String recordId) {
+    }
+
+    /**
+     * 工具调用对应的模型token用量。
+     *
+     * @param totalTokens 总token数
+     * @param promptTokens 输入token数
+     * @param completionTokens 输出token数
+     */
+    private record TokenUsage(Integer totalTokens, Integer promptTokens, Integer completionTokens) {
     }
 }

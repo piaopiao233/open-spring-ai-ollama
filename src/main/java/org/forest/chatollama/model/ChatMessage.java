@@ -64,6 +64,16 @@ public class ChatMessage implements Serializable {
     private Integer tokenCount;
 
     /**
+     * 输入token数
+     */
+    private Integer promptTokenCount;
+
+    /**
+     * 输出token数
+     */
+    private Integer completionTokenCount;
+
+    /**
      * 创建时间
      */
     private LocalDateTime createTime;
