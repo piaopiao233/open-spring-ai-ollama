@@ -106,6 +106,21 @@ public class ChatStreamTask {
     }
 
     /**
+     * 取出并清空当前模型调用累计的响应。
+     *
+     * @return 当前模型调用的响应快照
+     */
+    synchronized ResponseSnapshot drainCurrentResponse() {
+        ResponseSnapshot currentSnapshot = snapshot();
+        fullContent.setLength(0);
+        thinkingContent.setLength(0);
+        tokenCount = null;
+        promptTokenCount = null;
+        completionTokenCount = null;
+        return currentSnapshot;
+    }
+
+    /**
      * 获取可重复订阅的流。
      *
      * @return 流式响应

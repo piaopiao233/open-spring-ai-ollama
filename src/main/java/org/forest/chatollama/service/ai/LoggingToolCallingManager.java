@@ -137,12 +137,22 @@ public class LoggingToolCallingManager implements ToolCallingManager {
                         toolCall.arguments(),
                         null
                 )).toList();
+        ChatStreamTask streamTask = chatStreamTaskManagerProvider.getObject()
+                .getByRecordId(toolLogContext.recordId());
+        ChatStreamTask.ResponseSnapshot responseSnapshot = ObjectUtil.isNull(streamTask)
+                ? null
+                : streamTask.drainCurrentResponse();
+        MetaData metaData = new MetaData(toolCalls);
+        if (ObjectUtil.isNotNull(responseSnapshot) && StrUtil.isNotEmpty(responseSnapshot.thinkingContent())) {
+            // 工具阶段的思考内容随对应assistant保存，避免清空当前轮次时丢失。
+            metaData.setThinking(responseSnapshot.thinkingContent());
+        }
         ChatMessage assistantToolCallMessage = new ChatMessage(
                 Const.ChatMessageType.ASSISTANT,
                 toolLogContext.sessionId(),
                 toolLogContext.recordId(),
                 assistantMessage.getText(),
-                new MetaData(toolCalls)
+                metaData
         );
         TokenUsage tokenUsage = extractTokenUsage(chatResponse);
         assistantToolCallMessage.setTokenCount(tokenUsage.totalTokens());
