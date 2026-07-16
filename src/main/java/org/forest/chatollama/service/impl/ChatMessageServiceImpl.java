@@ -390,7 +390,7 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
                                         Integer promptTokenCount,
                                         Integer completionTokenCount) {
         if (fullContent.isEmpty() && thinkingContent.isEmpty()){
-            return;
+            fullContent = "异常终止";
         }
         ChatMessage assistantChat = new ChatMessage(
                 Const.ChatMessageType.ASSISTANT,
